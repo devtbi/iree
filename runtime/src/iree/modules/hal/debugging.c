@@ -253,6 +253,25 @@ iree_hal_module_debug_sink_owned_file_options(
 
 IREE_API_EXPORT iree_hal_module_debug_sink_t
 iree_hal_module_debug_sink_stdio(FILE* file) {
+  const char* path = NULL;
+#if IREE_FILE_IO_ENABLE
+  if (file == stderr) {
+    path = getenv("IREE_HAL_TRACE_FILE");
+    if (path && path[0]) {
+      FILE* env_file = fopen(path, "w");
+      if (env_file) {
+        iree_hal_module_debug_trace_options_t options = {
+            .format = IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE,
+            .max_element_count = IREE_HOST_SIZE_MAX,
+            .max_depth = IREE_HOST_SIZE_MAX,
+            .dispatch_filter = iree_string_view_empty(),
+            .dispatch_sample_percent = 100,
+        };
+        return iree_hal_module_debug_sink_owned_file_options(env_file, options);
+      }
+    }
+  }
+#endif  // IREE_FILE_IO_ENABLE
   iree_hal_module_debug_trace_options_t options = {
       .format = IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE,
       .max_element_count = IREE_HOST_SIZE_MAX,
