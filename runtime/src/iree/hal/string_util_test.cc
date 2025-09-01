@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -14,6 +15,7 @@
 #include "iree/base/api.h"
 #include "iree/base/internal/span.h"
 #include "iree/hal/api.h"
+#include "iree/modules/hal/debugging.h"
 #include "iree/testing/gtest.h"
 #include "iree/testing/status_matchers.h"
 
@@ -191,6 +193,7 @@ static StatusOr<std::string> FormatBufferElements(
         iree_const_byte_span_t{reinterpret_cast<const uint8_t*>(data.data()),
                                (iree_host_size_t)(data.size() * sizeof(T))},
         shape.size(), shape.data(), element_type, max_element_count,
+        IREE_HOST_SIZE_MAX, IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE,
         result.size() + 1, &result[0], &actual_length);
     result.resize(actual_length);
   } while (iree_status_is_out_of_range(status));
@@ -402,7 +405,7 @@ class Handle {
 
   // Support boolean expression evaluation ala unique_ptr/shared_ptr:
   // https://en.cppreference.com/w/cpp/memory/shared_ptr/operator_bool
-  typedef T* Handle::*unspecified_bool_type;
+  typedef T* Handle::* unspecified_bool_type;
   constexpr operator unspecified_bool_type() const noexcept {
     return value_ ? &Handle::value_ : nullptr;
   }
@@ -1171,6 +1174,147 @@ TEST(BufferViewStringUtilTest, RoundTrip) {
       "-99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 "
       "-99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 "
       "-99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 -99][-99 -99 -99]");
+}
+
+TEST(BufferViewTraceTest, PytorchTraceIsValidPython) {
+  IREE_ASSERT_OK_AND_ASSIGN(auto allocator, Allocator::CreateHostLocal());
+  IREE_ASSERT_OK_AND_ASSIGN(auto buffer_view,
+                            BufferView::Parse("2xi32=0 1", allocator));
+  FILE* file = tmpfile();
+  ASSERT_NE(nullptr, file);
+  iree_hal_module_debug_trace_options_t options = {
+      .format = IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH,
+      .max_element_count = IREE_HOST_SIZE_MAX,
+      .max_depth = IREE_HOST_SIZE_MAX,
+      .dispatch_filter = iree_string_view_empty(),
+      .dispatch_sample_percent = 100,
+  };
+  iree_hal_module_debug_sink_t sink =
+      iree_hal_module_debug_sink_stdio_options(file, options);
+  iree_hal_buffer_view_t* views[1] = {buffer_view.get()};
+  IREE_ASSERT_OK(sink.buffer_view_trace.fn(sink.buffer_view_trace.user_data,
+                                           IREE_SV("test_dispatch"), 1, views,
+                                           iree_allocator_system()));
+  fflush(file);
+  fseek(file, 0, SEEK_END);
+  long len = ftell(file);
+  rewind(file);
+  std::string code(len, '\0');
+  ASSERT_EQ(fread(code.data(), 1, len, file), static_cast<size_t>(len));
+  if (sink.release.fn) sink.release.fn(sink.release.user_data);
+  fclose(file);
+
+#if defined(_WIN32)
+  FILE* py = _popen(
+      "python - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#else
+  FILE* py = popen(
+      "python3 - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#endif
+  ASSERT_NE(py, nullptr);
+  fwrite(code.data(), 1, code.size(), py);
+#if defined(_WIN32)
+  int rc = _pclose(py);
+#else
+  int rc = pclose(py);
+#endif
+  EXPECT_EQ(rc, 0);
+}
+
+TEST(BufferViewTraceTest, PytorchTraceTruncatedByElementCountIsValidPython) {
+  IREE_ASSERT_OK_AND_ASSIGN(auto allocator, Allocator::CreateHostLocal());
+  IREE_ASSERT_OK_AND_ASSIGN(auto buffer_view,
+                            BufferView::Parse("4xi32=0 1 2 3", allocator));
+  FILE* file = tmpfile();
+  ASSERT_NE(nullptr, file);
+  iree_hal_module_debug_trace_options_t options = {
+      .format = IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH,
+      .max_element_count = 2,
+      .max_depth = IREE_HOST_SIZE_MAX,
+      .dispatch_filter = iree_string_view_empty(),
+      .dispatch_sample_percent = 100,
+  };
+  iree_hal_module_debug_sink_t sink =
+      iree_hal_module_debug_sink_stdio_options(file, options);
+  iree_hal_buffer_view_t* views[1] = {buffer_view.get()};
+  IREE_ASSERT_OK(sink.buffer_view_trace.fn(sink.buffer_view_trace.user_data,
+                                           IREE_SV("test_dispatch"), 1, views,
+                                           iree_allocator_system()));
+  fflush(file);
+  fseek(file, 0, SEEK_END);
+  long len = ftell(file);
+  rewind(file);
+  std::string code(len, '\0');
+  ASSERT_EQ(fread(code.data(), 1, len, file), static_cast<size_t>(len));
+  if (sink.release.fn) sink.release.fn(sink.release.user_data);
+  fclose(file);
+  EXPECT_EQ(code.find("..."), std::string::npos);
+#if defined(_WIN32)
+  FILE* py = _popen(
+      "python - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#else
+  FILE* py = popen(
+      "python3 - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#endif
+  ASSERT_NE(py, nullptr);
+  fwrite(code.data(), 1, code.size(), py);
+#if defined(_WIN32)
+  int rc = _pclose(py);
+#else
+  int rc = pclose(py);
+#endif
+  EXPECT_EQ(rc, 0);
+}
+
+TEST(BufferViewTraceTest, PytorchTraceTruncatedByDepthIsValidPython) {
+  IREE_ASSERT_OK_AND_ASSIGN(auto allocator, Allocator::CreateHostLocal());
+  IREE_ASSERT_OK_AND_ASSIGN(auto buffer_view,
+                            BufferView::Parse("2x2xi32=0 1 2 3", allocator));
+  FILE* file = tmpfile();
+  ASSERT_NE(nullptr, file);
+  iree_hal_module_debug_trace_options_t options = {
+      .format = IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH,
+      .max_element_count = IREE_HOST_SIZE_MAX,
+      .max_depth = 1,
+      .dispatch_filter = iree_string_view_empty(),
+      .dispatch_sample_percent = 100,
+  };
+  iree_hal_module_debug_sink_t sink =
+      iree_hal_module_debug_sink_stdio_options(file, options);
+  iree_hal_buffer_view_t* views[1] = {buffer_view.get()};
+  IREE_ASSERT_OK(sink.buffer_view_trace.fn(sink.buffer_view_trace.user_data,
+                                           IREE_SV("test_dispatch"), 1, views,
+                                           iree_allocator_system()));
+  fflush(file);
+  fseek(file, 0, SEEK_END);
+  long len = ftell(file);
+  rewind(file);
+  std::string code(len, '\0');
+  ASSERT_EQ(fread(code.data(), 1, len, file), static_cast<size_t>(len));
+  if (sink.release.fn) sink.release.fn(sink.release.user_data);
+  fclose(file);
+  EXPECT_EQ(code.find("..."), std::string::npos);
+#if defined(_WIN32)
+  FILE* py = _popen(
+      "python - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#else
+  FILE* py = popen(
+      "python3 - <<'PY'\nimport ast,sys\nast.parse(sys.stdin.read())\nPY\n",
+      "w");
+#endif
+  ASSERT_NE(py, nullptr);
+  fwrite(code.data(), 1, code.size(), py);
+#if defined(_WIN32)
+  int rc = _pclose(py);
+#else
+  int rc = pclose(py);
+#endif
+  EXPECT_EQ(rc, 0);
 }
 
 }  // namespace

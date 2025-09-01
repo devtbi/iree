@@ -55,13 +55,39 @@ iree_hal_module_debug_sink_null(void);
 
 #if IREE_FILE_IO_ENABLE
 
-// Returns a default debug sink that routes to an stdio stream in textual form.
+typedef struct iree_hal_module_debug_trace_options_t {
+  iree_hal_buffer_elements_format_t format;
+  iree_host_size_t max_element_count;
+  iree_host_size_t max_depth;
+  // Comma-separated list of dispatch names to trace. Empty to trace all.
+  iree_string_view_t dispatch_filter;
+  // Percentage of dispatches to trace (0-100).
+  int32_t dispatch_sample_percent;
+} iree_hal_module_debug_trace_options_t;
+
+// Returns a debug sink that routes to an stdio stream in textual form with
+// configurable formatting.
+IREE_API_EXPORT iree_hal_module_debug_sink_t
+iree_hal_module_debug_sink_stdio_options(
+    FILE* file, iree_hal_module_debug_trace_options_t options);
+
+// Returns a debug sink that routes to an stdio stream and takes ownership of
+// the file handle, closing it when the sink is released.
+IREE_API_EXPORT iree_hal_module_debug_sink_t
+iree_hal_module_debug_sink_owned_file_options(
+    FILE* file, iree_hal_module_debug_trace_options_t options);
+
+// Returns a debug sink using default formatting options.
 IREE_API_EXPORT iree_hal_module_debug_sink_t
 iree_hal_module_debug_sink_stdio(FILE* file);
 
 #else
 
 #define iree_hal_module_debug_sink_stdio(file) iree_hal_module_debug_sink_null()
+#define iree_hal_module_debug_sink_stdio_options(file, options) \
+  iree_hal_module_debug_sink_null()
+#define iree_hal_module_debug_sink_owned_file_options(file, options) \
+  iree_hal_module_debug_sink_null()
 
 #endif  // IREE_FILE_IO_ENABLE
 

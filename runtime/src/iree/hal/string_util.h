@@ -102,12 +102,20 @@ IREE_API_EXPORT iree_status_t iree_hal_parse_buffer_elements(
     iree_string_view_t data_str, iree_hal_element_type_t element_type,
     iree_byte_span_t data_ptr);
 
+// Formatting style for printing buffer elements.
+typedef enum iree_hal_buffer_elements_format_e {
+  IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE = 0,
+  // Emits tensors in `torch.tensor([...])` form for cross-framework comparison.
+  IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH = 1,
+} iree_hal_buffer_elements_format_t;
+
 // Converts a shaped buffer of |element_type| elements to a string.
 // This will include []'s to denote each dimension, for example for a shape of
 // 2x3 the elements will be formatted as `[1 2 3][4 5 6]`.
 //
 // |max_element_count| can be used to limit the total number of elements printed
 // when the count may be large. Elided elements will be replaced with `...`.
+// |max_depth| limits the recursion depth when printing nested shapes.
 //
 // |buffer_capacity| defines the size of |buffer| in bytes and
 // |out_buffer_length| will return the string length in characters. Returns
@@ -118,7 +126,8 @@ IREE_API_EXPORT iree_status_t iree_hal_parse_buffer_elements(
 IREE_API_EXPORT iree_status_t iree_hal_format_buffer_elements(
     iree_const_byte_span_t data, iree_host_size_t shape_rank,
     const iree_hal_dim_t* shape, iree_hal_element_type_t element_type,
-    iree_host_size_t max_element_count, iree_host_size_t buffer_capacity,
+    iree_host_size_t max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length);
 
 #ifdef __cplusplus

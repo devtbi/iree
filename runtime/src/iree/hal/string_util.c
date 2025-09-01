@@ -725,17 +725,22 @@ IREE_API_EXPORT iree_status_t iree_hal_parse_buffer_elements(
 static iree_status_t iree_hal_format_buffer_elements_recursive(
     iree_const_byte_span_t data, iree_host_size_t shape_rank,
     const iree_hal_dim_t* shape, iree_hal_element_type_t element_type,
-    iree_host_size_t* max_element_count, iree_host_size_t buffer_capacity,
+    iree_host_size_t* max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length) {
   iree_host_size_t buffer_length = 0;
-  if (shape_rank == 0) {
-    // Scalar value; recurse to get on to the leaf dimension path.
+  if (max_depth == 0) {
+    if (format != IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+      APPEND_CHAR('.');
+      APPEND_CHAR('.');
+      APPEND_CHAR('.');
+    }
+  } else if (shape_rank == 0) {
     const iree_hal_dim_t one = 1;
     return iree_hal_format_buffer_elements_recursive(
-        data, 1, &one, element_type, max_element_count, buffer_capacity, buffer,
-        out_buffer_length);
+        data, 1, &one, element_type, max_element_count, max_depth - 1, format,
+        buffer_capacity, buffer, out_buffer_length);
   } else if (shape_rank > 1) {
-    // Nested dimension; recurse into the next innermost dimension.
     iree_hal_dim_t dim_length = 1;
     for (iree_host_size_t i = 1; i < shape_rank; ++i) {
       dim_length *= shape[i];
@@ -756,7 +761,7 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
       iree_host_size_t actual_length = 0;
       iree_status_t status = iree_hal_format_buffer_elements_recursive(
           subdata, shape_rank - 1, shape + 1, element_type, max_element_count,
-          buffer ? buffer_capacity - buffer_length : 0,
+          max_depth - 1, format, buffer ? buffer_capacity - buffer_length : 0,
           buffer ? buffer + buffer_length : NULL, &actual_length);
       buffer_length += actual_length;
       if (iree_status_is_out_of_range(status)) {
@@ -766,9 +771,13 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
       }
       subdata.data += dim_stride;
       APPEND_CHAR(']');
+      if (i + 1 < shape[0] &&
+          format == IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+        APPEND_CHAR(',');
+        APPEND_CHAR(' ');
+      }
     }
   } else {
-    // Leaf dimension; output data.
     iree_host_size_t max_count =
         iree_min(*max_element_count, (iree_host_size_t)shape[0]);
     iree_device_size_t element_stride =
@@ -784,7 +793,14 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
     subdata.data = data.data;
     subdata.data_length = element_stride;
     for (iree_hal_dim_t i = 0; i < max_count; ++i) {
-      if (i > 0) APPEND_CHAR(' ');
+      if (i > 0) {
+        if (format == IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+          APPEND_CHAR(',');
+          APPEND_CHAR(' ');
+        } else {
+          APPEND_CHAR(' ');
+        }
+      }
       iree_host_size_t actual_length = 0;
       iree_status_t status = iree_hal_format_element(
           subdata, element_type, buffer ? buffer_capacity - buffer_length : 0,
@@ -798,9 +814,11 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
       }
     }
     if (max_count < shape[0]) {
-      APPEND_CHAR('.');
-      APPEND_CHAR('.');
-      APPEND_CHAR('.');
+      if (format != IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+        APPEND_CHAR('.');
+        APPEND_CHAR('.');
+        APPEND_CHAR('.');
+      }
     }
   }
   if (out_buffer_length) {
@@ -813,7 +831,8 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
 IREE_API_EXPORT iree_status_t iree_hal_format_buffer_elements(
     iree_const_byte_span_t data, iree_host_size_t shape_rank,
     const iree_hal_dim_t* shape, iree_hal_element_type_t element_type,
-    iree_host_size_t max_element_count, iree_host_size_t buffer_capacity,
+    iree_host_size_t max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length) {
   if (out_buffer_length) {
     *out_buffer_length = 0;
@@ -822,6 +841,6 @@ IREE_API_EXPORT iree_status_t iree_hal_format_buffer_elements(
     buffer[0] = '\0';
   }
   return iree_hal_format_buffer_elements_recursive(
-      data, shape_rank, shape, element_type, &max_element_count,
-      buffer_capacity, buffer, out_buffer_length);
+      data, shape_rank, shape, element_type, &max_element_count, max_depth,
+      format, buffer_capacity, buffer, out_buffer_length);
 }

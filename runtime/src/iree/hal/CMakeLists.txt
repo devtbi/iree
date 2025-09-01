@@ -76,6 +76,7 @@ iree_cc_test(
     "string_util_test.cc"
   DEPS
     ::hal
+    iree::modules::hal::debugging
     iree::base
     iree::base::internal::span
     iree::testing::gtest

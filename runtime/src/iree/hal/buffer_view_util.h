@@ -15,6 +15,7 @@
 #include "iree/hal/allocator.h"
 #include "iree/hal/buffer_view.h"
 #include "iree/hal/device.h"
+#include "iree/hal/string_util.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -132,6 +133,14 @@ iree_hal_buffer_view_parse(iree_string_view_t value, iree_hal_device_t* device,
 IREE_API_EXPORT iree_status_t iree_hal_buffer_view_format(
     const iree_hal_buffer_view_t* buffer_view,
     iree_host_size_t max_element_count, iree_host_size_t buffer_capacity,
+    char* buffer, iree_host_size_t* out_buffer_length);
+
+// Formats a buffer view with additional options controlling recursion depth and
+// element formatting style.
+IREE_API_EXPORT iree_status_t iree_hal_buffer_view_format_options(
+    const iree_hal_buffer_view_t* buffer_view,
+    iree_host_size_t max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length);
 
 // Prints buffer view elements into a fully-specified string-form format like

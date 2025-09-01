@@ -463,7 +463,8 @@ iree_hal_buffer_view_parse(iree_string_view_t value, iree_hal_device_t* device,
 
 static iree_status_t iree_hal_buffer_view_format_impl(
     const iree_hal_buffer_view_t* buffer_view,
-    iree_host_size_t max_element_count, iree_host_size_t buffer_capacity,
+    iree_host_size_t max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length) {
   if (out_buffer_length) {
     *out_buffer_length = 0;
@@ -524,7 +525,7 @@ static iree_status_t iree_hal_buffer_view_format_impl(
       iree_hal_buffer_view_shape_rank(buffer_view),
       iree_hal_buffer_view_shape_dims(buffer_view),
       iree_hal_buffer_view_element_type(buffer_view), max_element_count,
-      buffer ? buffer_capacity - buffer_length : 0,
+      max_depth, format, buffer ? buffer_capacity - buffer_length : 0,
       buffer ? buffer + buffer_length : NULL, &elements_length);
   buffer_length += elements_length;
   status =
@@ -547,11 +548,22 @@ IREE_API_EXPORT iree_status_t iree_hal_buffer_view_format(
     const iree_hal_buffer_view_t* buffer_view,
     iree_host_size_t max_element_count, iree_host_size_t buffer_capacity,
     char* buffer, iree_host_size_t* out_buffer_length) {
+  return iree_hal_buffer_view_format_impl(
+      buffer_view, max_element_count, IREE_HOST_SIZE_MAX,
+      IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE, buffer_capacity, buffer,
+      out_buffer_length);
+}
+
+IREE_API_EXPORT iree_status_t iree_hal_buffer_view_format_options(
+    const iree_hal_buffer_view_t* buffer_view,
+    iree_host_size_t max_element_count, iree_host_size_t max_depth,
+    iree_hal_buffer_elements_format_t format, iree_host_size_t buffer_capacity,
+    char* buffer, iree_host_size_t* out_buffer_length) {
   IREE_ASSERT_ARGUMENT(buffer_view);
   IREE_TRACE_ZONE_BEGIN(z0);
   iree_status_t status = iree_hal_buffer_view_format_impl(
-      buffer_view, max_element_count, buffer_capacity, buffer,
-      out_buffer_length);
+      buffer_view, max_element_count, max_depth, format, buffer_capacity,
+      buffer, out_buffer_length);
   IREE_TRACE_ZONE_END(z0);
   return status;
 }

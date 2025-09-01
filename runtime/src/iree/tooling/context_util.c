@@ -15,6 +15,7 @@
 #include "iree/base/internal/path.h"
 #include "iree/hal/local/loaders/registration/init.h"
 #include "iree/hal/local/plugins/registration/init.h"
+#include "iree/modules/hal/debugging.h"
 #include "iree/modules/hal/inline/module.h"
 #include "iree/modules/hal/loader/module.h"
 #include "iree/modules/hal/module.h"
@@ -43,6 +44,20 @@ IREE_FLAG(
     "  mmap: maps the module file into discardable memory - can increase\n"
     "        warm-up time and variance as mapped pages are swapped\n"
     "        by the OS.");
+
+IREE_FLAG(string, hal_trace_format, "iree",
+          "Format for hal.buffer_view.trace tensors (iree|pytorch).");
+IREE_FLAG(
+    int32_t, hal_trace_max_element_count, -1,
+    "Maximum elements to print for hal.buffer_view.trace (-1 for unlimited).");
+IREE_FLAG(int32_t, hal_trace_max_depth, -1,
+          "Maximum depth for hal.buffer_view.trace (-1 for unlimited).");
+IREE_FLAG(string, hal_trace_dispatches, "",
+          "Comma-separated list of dispatch names to trace.");
+IREE_FLAG(int32_t, hal_trace_dispatch_percent, 100,
+          "Percentage of dispatches to trace (0-100).");
+IREE_FLAG(string, hal_trace_file, "",
+          "Path to write hal.buffer_view.trace output (stderr if empty).");
 
 static iree_status_t iree_tooling_load_bytecode_module(
     iree_vm_instance_t* instance, iree_string_view_t path,
@@ -254,10 +269,51 @@ static iree_status_t iree_tooling_load_hal_async_module(
   // Create HAL module wrapping the device created above.
   iree_hal_module_flags_t flags = IREE_HAL_MODULE_FLAG_NONE;
   iree_vm_module_t* module = NULL;
+  iree_hal_module_debug_trace_options_t trace_options = {
+      .format = strcmp(FLAG_hal_trace_format, "pytorch") == 0
+                    ? IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH
+                    : IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE,
+      .max_element_count =
+          FLAG_hal_trace_max_element_count < 0
+              ? IREE_HOST_SIZE_MAX
+              : (iree_host_size_t)FLAG_hal_trace_max_element_count,
+      .max_depth = FLAG_hal_trace_max_depth < 0
+                       ? IREE_HOST_SIZE_MAX
+                       : (iree_host_size_t)FLAG_hal_trace_max_depth,
+      .dispatch_filter = iree_make_cstring_view(FLAG_hal_trace_dispatches),
+      .dispatch_sample_percent = FLAG_hal_trace_dispatch_percent < 0
+                                     ? 0
+                                     : (FLAG_hal_trace_dispatch_percent > 100
+                                            ? 100
+                                            : FLAG_hal_trace_dispatch_percent),
+  };
+  FILE* trace_file = stderr;
+  bool trace_file_owned = false;
+  if (FLAG_hal_trace_file[0]) {
+    trace_file = fopen(FLAG_hal_trace_file, "w");
+    if (!trace_file) {
+      iree_hal_device_list_free(device_list);
+      iree_hal_allocator_release(device_allocator);
+      iree_hal_device_release(device);
+      IREE_TRACE_ZONE_END(z0);
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "failed to open trace file '%s'",
+                              FLAG_hal_trace_file);
+    }
+    trace_file_owned = true;
+  }
+  iree_hal_module_debug_sink_t sink =
+      trace_file_owned
+          ? iree_hal_module_debug_sink_owned_file_options(trace_file,
+                                                          trace_options)
+          : iree_hal_module_debug_sink_stdio_options(trace_file, trace_options);
   iree_status_t status = iree_hal_module_create(
       instance, iree_hal_module_device_policy_from_flags(device_list),
-      device_list->count, device_list->devices, flags,
-      iree_hal_module_debug_sink_stdio(stderr), host_allocator, &module);
+      device_list->count, device_list->devices, flags, sink, host_allocator,
+      &module);
+  if (!iree_status_is_ok(status) && sink.release.fn) {
+    sink.release.fn(sink.release.user_data);
+  }
 
   iree_hal_device_list_free(device_list);
 
@@ -316,9 +372,47 @@ static iree_status_t iree_tooling_load_hal_inline_module(
   // this tooling.
   iree_hal_inline_module_flags_t flags = IREE_HAL_INLINE_MODULE_FLAG_NONE;
   iree_vm_module_t* module = NULL;
+  iree_hal_module_debug_trace_options_t trace_options = {
+      .format = strcmp(FLAG_hal_trace_format, "pytorch") == 0
+                    ? IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH
+                    : IREE_HAL_BUFFER_ELEMENTS_FORMAT_IREE,
+      .max_element_count =
+          FLAG_hal_trace_max_element_count < 0
+              ? IREE_HOST_SIZE_MAX
+              : (iree_host_size_t)FLAG_hal_trace_max_element_count,
+      .max_depth = FLAG_hal_trace_max_depth < 0
+                       ? IREE_HOST_SIZE_MAX
+                       : (iree_host_size_t)FLAG_hal_trace_max_depth,
+      .dispatch_filter = iree_make_cstring_view(FLAG_hal_trace_dispatches),
+      .dispatch_sample_percent = FLAG_hal_trace_dispatch_percent < 0
+                                     ? 0
+                                     : (FLAG_hal_trace_dispatch_percent > 100
+                                            ? 100
+                                            : FLAG_hal_trace_dispatch_percent),
+  };
+  FILE* trace_file = stderr;
+  bool trace_file_owned = false;
+  if (FLAG_hal_trace_file[0]) {
+    trace_file = fopen(FLAG_hal_trace_file, "w");
+    if (!trace_file) {
+      iree_hal_allocator_release(device_allocator);
+      IREE_TRACE_ZONE_END(z0);
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "failed to open trace file '%s'",
+                              FLAG_hal_trace_file);
+    }
+    trace_file_owned = true;
+  }
+  iree_hal_module_debug_sink_t sink =
+      trace_file_owned
+          ? iree_hal_module_debug_sink_owned_file_options(trace_file,
+                                                          trace_options)
+          : iree_hal_module_debug_sink_stdio_options(trace_file, trace_options);
   iree_status_t status = iree_hal_inline_module_create(
-      instance, flags, iree_hal_module_debug_sink_stdio(stderr),
-      device_allocator, host_allocator, &module);
+      instance, flags, sink, device_allocator, host_allocator, &module);
+  if (!iree_status_is_ok(status) && sink.release.fn) {
+    sink.release.fn(sink.release.user_data);
+  }
 
   if (iree_status_is_ok(status)) {
     *out_module = module;
