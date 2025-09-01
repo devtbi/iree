@@ -173,6 +173,11 @@ static iree_status_t iree_hal_module_buffer_view_trace_stdio(
           state->options.max_element_count, state->options.max_depth,
           IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH, value_length, value_buffer,
           &value_length);
+      uint64_t hash = 0;
+      if (iree_status_is_ok(status)) {
+        hash = iree_hal_fnv1a_u64(buffer_mapping.contents.data,
+                                  buffer_mapping.contents.data_length);
+      }
       status = iree_status_join(status,
                                 iree_hal_buffer_unmap_range(&buffer_mapping));
       if (iree_status_is_ok(status)) {
@@ -183,8 +188,6 @@ static iree_status_t iree_hal_module_buffer_view_trace_stdio(
           state->pytorch_header_emitted = true;
         }
         uint64_t guid = (dispatch_index << 16) | i;
-        uint64_t hash = iree_hal_fnv1a_u64(buffer_mapping.contents.data,
-                                           buffer_mapping.contents.data_length);
         fprintf(file, "%s_%08" PRIx64 " = torch.tensor(%s, dtype=torch.%s)\n",
                 name_buffer, guid, value_buffer, dtype);
         fprintf(file, "# hash=0x%016" PRIx64 "\n", hash);
