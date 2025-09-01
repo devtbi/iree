@@ -7,8 +7,8 @@
 #include "iree/modules/hal/debugging.h"
 
 #include <ctype.h>
-#include <inttypes.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 //===----------------------------------------------------------------------===//
@@ -71,15 +71,6 @@ static const char* iree_hal_pytorch_dtype_string(
     default:
       return "uint8";
   }
-}
-
-static uint64_t iree_hal_fnv1a_u64(const uint8_t* data, iree_host_size_t len) {
-  uint64_t hash = 1469598103934665603ULL;
-  for (iree_host_size_t i = 0; i < len; ++i) {
-    hash ^= data[i];
-    hash *= 1099511628211ULL;
-  }
-  return hash;
 }
 
 static void iree_hal_sanitize_identifier(iree_string_view_t src, char* dst,
@@ -173,11 +164,6 @@ static iree_status_t iree_hal_module_buffer_view_trace_stdio(
           state->options.max_element_count, state->options.max_depth,
           IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH, value_length, value_buffer,
           &value_length);
-      uint64_t hash = 0;
-      if (iree_status_is_ok(status)) {
-        hash = iree_hal_fnv1a_u64(buffer_mapping.contents.data,
-                                  buffer_mapping.contents.data_length);
-      }
       status = iree_status_join(status,
                                 iree_hal_buffer_unmap_range(&buffer_mapping));
       if (iree_status_is_ok(status)) {
@@ -187,10 +173,9 @@ static iree_status_t iree_hal_module_buffer_view_trace_stdio(
           fprintf(file, "import torch\n");
           state->pytorch_header_emitted = true;
         }
-        uint64_t guid = (dispatch_index << 16) | i;
-        fprintf(file, "%s_%08" PRIx64 " = torch.tensor(%s, dtype=torch.%s)\n",
-                name_buffer, guid, value_buffer, dtype);
-        fprintf(file, "# hash=0x%016" PRIx64 "\n", hash);
+        unsigned int id = (unsigned int)rand();
+        fprintf(file, "%s_%u = torch.tensor(%s, dtype=torch.%s)\n", name_buffer,
+                id, value_buffer, dtype);
       }
       iree_allocator_free(host_allocator, value_buffer);
       IREE_RETURN_IF_ERROR(status);
