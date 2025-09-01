@@ -85,6 +85,7 @@ iree_runtime_cc_test(
     srcs = ["string_util_test.cc"],
     deps = [
         ":hal",
+        "//runtime/src/iree/modules/hal:debugging",
         "//runtime/src/iree/base",
         "//runtime/src/iree/base/internal:span",
         "//runtime/src/iree/testing:gtest",
