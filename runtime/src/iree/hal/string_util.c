@@ -730,9 +730,11 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
     char* buffer, iree_host_size_t* out_buffer_length) {
   iree_host_size_t buffer_length = 0;
   if (max_depth == 0) {
-    APPEND_CHAR('.');
-    APPEND_CHAR('.');
-    APPEND_CHAR('.');
+    if (format != IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+      APPEND_CHAR('.');
+      APPEND_CHAR('.');
+      APPEND_CHAR('.');
+    }
   } else if (shape_rank == 0) {
     const iree_hal_dim_t one = 1;
     return iree_hal_format_buffer_elements_recursive(
@@ -812,9 +814,11 @@ static iree_status_t iree_hal_format_buffer_elements_recursive(
       }
     }
     if (max_count < shape[0]) {
-      APPEND_CHAR('.');
-      APPEND_CHAR('.');
-      APPEND_CHAR('.');
+      if (format != IREE_HAL_BUFFER_ELEMENTS_FORMAT_PYTORCH) {
+        APPEND_CHAR('.');
+        APPEND_CHAR('.');
+        APPEND_CHAR('.');
+      }
     }
   }
   if (out_buffer_length) {
