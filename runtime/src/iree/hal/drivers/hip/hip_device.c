@@ -264,6 +264,7 @@ IREE_API_EXPORT void iree_hal_hip_device_params_initialize(
   out_params->queue_count = 1;
   out_params->command_buffer_mode = IREE_HAL_HIP_COMMAND_BUFFER_MODE_STREAM;
   out_params->stream_tracing = 0;
+  out_params->stream_tracing_filter = iree_string_view_empty();
   out_params->async_allocations = true;
   out_params->file_transfer_buffer_size =
       IREE_HAL_DEVICE_TRANSFER_DEFAULT_BUFFER_SIZE;
@@ -365,8 +366,8 @@ static iree_status_t iree_hal_hip_device_initialize_internal(
       status = iree_hal_stream_tracing_context_allocate(
           (iree_hal_stream_tracing_device_interface_t*)tracing_device_interface,
           device->identifier, device->params.stream_tracing,
-          &device->block_pool, host_allocator,
-          &device->devices[i].tracing_context);
+          device->params.stream_tracing_filter, &device->block_pool,
+          host_allocator, &device->devices[i].tracing_context);
       status = IREE_HIP_CALL_TO_STATUS(symbols, hipCtxPopCurrent(NULL));
       if (!iree_status_is_ok(status)) {
         break;

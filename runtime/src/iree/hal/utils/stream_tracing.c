@@ -67,6 +67,10 @@ struct iree_hal_stream_tracing_context_t {
 
   int32_t verbosity;
 
+  // Optional glob applied to dispatch zone names; empty traces everything.
+  // Owned by the context.
+  iree_string_view_t dispatch_filter;
+
   uint32_t query_capacity;
 
   // Event pool reused to capture tracing timestamps.
@@ -123,7 +127,8 @@ iree_status_t iree_hal_stream_tracing_context_allocate(
     iree_hal_stream_tracing_device_interface_t* device_interface,
     iree_string_view_t queue_name,
     iree_hal_stream_tracing_verbosity_t stream_tracing_verbosity,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
+    iree_string_view_t dispatch_filter, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator,
     iree_hal_stream_tracing_context_t** out_context) {
   IREE_TRACE_ZONE_BEGIN(z0);
   IREE_ASSERT_ARGUMENT(device_interface);
@@ -131,9 +136,12 @@ iree_status_t iree_hal_stream_tracing_context_allocate(
   IREE_ASSERT_ARGUMENT(out_context);
   *out_context = NULL;
 
+  // The filter pattern is stored inline after the context struct.
+  const iree_host_size_t context_size =
+      iree_host_align(sizeof(iree_hal_stream_tracing_context_t), 8);
   iree_hal_stream_tracing_context_t* context = NULL;
-  iree_status_t status =
-      iree_allocator_malloc(host_allocator, sizeof(*context), (void**)&context);
+  iree_status_t status = iree_allocator_malloc(
+      host_allocator, context_size + dispatch_filter.size, (void**)&context);
   if (iree_status_is_ok(status)) {
     context->device_interface = device_interface;
     context->block_pool = block_pool;
@@ -141,7 +149,16 @@ iree_status_t iree_hal_stream_tracing_context_allocate(
     context->query_capacity = IREE_ARRAYSIZE(context->event_pool);
     context->submitted_event_list.head = NULL;
     context->submitted_event_list.tail = NULL;
+    context->submitted_event_list.skipped_zone_count = 0;
     context->verbosity = stream_tracing_verbosity;
+    if (dispatch_filter.size) {
+      char* filter_storage = (char*)context + context_size;
+      memcpy(filter_storage, dispatch_filter.data, dispatch_filter.size);
+      context->dispatch_filter =
+          iree_make_string_view(filter_storage, dispatch_filter.size);
+    } else {
+      context->dispatch_filter = iree_string_view_empty();
+    }
     iree_slim_mutex_initialize(&context->event_mutex);
   }
 
@@ -241,11 +258,21 @@ static iree_status_t iree_hal_stream_tracing_context_collect_list_internal(
   // Inner per-event loop.
   while (event) {
     uint32_t query_id = (uint32_t)(event - &context->event_pool[0]);
-    IREE_RETURN_IF_ERROR(
-        context->device_interface->vtable->synchronize_native_event(
-            context->device_interface, event->event));
-    IREE_RETURN_IF_ERROR(context->device_interface->vtable->query_native_event(
-        context->device_interface, event->event));
+    // Most events have long completed by the time we collect (the command
+    // buffer they belong to has retired) so ask first and only block on the
+    // ones still in flight instead of paying a host synchronization per event.
+    iree_status_t query_status =
+        context->device_interface->vtable->query_native_event(
+            context->device_interface, event->event);
+    if (!iree_status_is_ok(query_status)) {
+      iree_status_ignore(query_status);
+      IREE_RETURN_IF_ERROR(
+          context->device_interface->vtable->synchronize_native_event(
+              context->device_interface, event->event));
+      IREE_RETURN_IF_ERROR(
+          context->device_interface->vtable->query_native_event(
+              context->device_interface, event->event));
+    }
 
     // Calculate context-relative time and notify tracy.
     float relative_millis = 0.0f;
@@ -487,6 +514,17 @@ void iree_hal_stream_tracing_zone_begin_impl(
   iree_tracing_gpu_zone_begin(context->id, query_id, src_loc);
 }
 
+// Returns true if a dispatch zone with the given names should be recorded.
+static bool iree_hal_stream_tracing_context_matches_filter(
+    const iree_hal_stream_tracing_context_t* context, const char* function_name,
+    size_t function_name_length, const char* name, size_t name_length) {
+  if (iree_string_view_is_empty(context->dispatch_filter)) return true;
+  const iree_string_view_t zone_name =
+      name_length ? iree_make_string_view(name, name_length)
+                  : iree_make_string_view(function_name, function_name_length);
+  return iree_string_view_match_pattern(zone_name, context->dispatch_filter);
+}
+
 void iree_hal_stream_tracing_zone_begin_external_impl(
     iree_hal_stream_tracing_context_t* context,
     iree_hal_stream_tracing_context_event_list_t* event_list,
@@ -495,6 +533,11 @@ void iree_hal_stream_tracing_zone_begin_external_impl(
     size_t function_name_length, const char* name, size_t name_length) {
   if (!context) return;
   if (verbosity > context->verbosity) return;
+  if (!iree_hal_stream_tracing_context_matches_filter(
+          context, function_name, function_name_length, name, name_length)) {
+    ++event_list->skipped_zone_count;
+    return;
+  }
   uint16_t query_id =
       iree_hal_stream_tracing_context_insert_query(context, event_list);
   iree_tracing_gpu_zone_begin_external(context->id, query_id, file_name,
@@ -528,6 +571,11 @@ void iree_hal_stream_tracing_zone_end_impl(
     iree_hal_stream_tracing_verbosity_t verbosity) {
   if (!context) return;
   if (verbosity > context->verbosity) return;
+  if (event_list->skipped_zone_count) {
+    // Matching end of a dispatch zone suppressed by the filter.
+    --event_list->skipped_zone_count;
+    return;
+  }
   uint16_t query_id =
       iree_hal_stream_tracing_context_insert_query(context, event_list);
   iree_tracing_gpu_zone_end(context->id, query_id);
@@ -555,7 +603,8 @@ iree_status_t iree_hal_stream_tracing_context_allocate(
     iree_hal_stream_tracing_device_interface_t* interface,
     iree_string_view_t queue_name,
     iree_hal_stream_tracing_verbosity_t stream_tracing_verbosity,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
+    iree_string_view_t dispatch_filter, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator,
     iree_hal_stream_tracing_context_t** out_context) {
   *out_context = NULL;
   interface->vtable->destroy(interface);

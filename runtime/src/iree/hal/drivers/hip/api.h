@@ -87,6 +87,12 @@ typedef struct iree_hal_hip_device_params_t {
   // from there; be wary of whole-program tracing with this enabled.
   int32_t stream_tracing;
 
+  // Optional glob matched against dispatch names when stream tracing is
+  // enabled; dispatches that do not match record no tracing queries. Empty
+  // traces every dispatch. Borrowed: only needs to remain valid until device
+  // creation returns.
+  iree_string_view_t stream_tracing_filter;
+
   // Whether to use async allocations even if reported as available by the
   // device. Defaults to true when the device supports it.
   bool async_allocations;

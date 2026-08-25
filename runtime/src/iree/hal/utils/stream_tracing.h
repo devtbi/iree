@@ -49,6 +49,10 @@ typedef struct iree_hal_stream_tracing_context_event_t
 typedef struct iree_hal_stream_tracing_context_event_list_t {
   iree_hal_stream_tracing_context_event_t* head;
   iree_hal_stream_tracing_context_event_t* tail;
+  // Number of zone begins suppressed by the dispatch filter whose matching
+  // ends have not been seen yet. Zones do not nest across a filtered dispatch
+  // so a counter is sufficient to keep begin/end pairing balanced.
+  uint32_t skipped_zone_count;
 } iree_hal_stream_tracing_context_event_list_t;
 
 typedef enum iree_hal_stream_tracing_verbosity_e {
@@ -118,11 +122,17 @@ typedef struct iree_hal_stream_tracing_device_interface_vtable_t {
 // The tracing context takes ownership of the interface,
 // and the interface's destroy method will be called
 // when cleanup is required.
+//
+// |dispatch_filter| is an optional glob (iree_string_view_match_pattern)
+// applied to dispatch zone names: dispatches that do not match record no
+// timestamp queries at all and cost nothing beyond the comparison. An empty
+// filter traces every dispatch. The pattern is copied into the context.
 iree_status_t iree_hal_stream_tracing_context_allocate(
     iree_hal_stream_tracing_device_interface_t* interface,
     iree_string_view_t queue_name,
     iree_hal_stream_tracing_verbosity_t stream_tracing_verbosity,
-    iree_arena_block_pool_t* block_pool, iree_allocator_t host_allocator,
+    iree_string_view_t dispatch_filter, iree_arena_block_pool_t* block_pool,
+    iree_allocator_t host_allocator,
     iree_hal_stream_tracing_context_t** out_context);
 
 // Frees a tracing context and all associated resources.

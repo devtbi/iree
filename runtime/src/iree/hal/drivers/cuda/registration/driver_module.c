@@ -35,6 +35,11 @@ IREE_FLAG(
     "   1 : coarse command buffer level tracing enabled.\n"
     "   2 : fine-grained kernel level tracing enabled.\n");
 
+IREE_FLAG(string, cuda_tracing_filter, "",
+          "Optional glob selecting which dispatches record tracing queries\n"
+          "when --cuda_tracing=2, such as '*matmul*'. Dispatches that do not\n"
+          "match cost nothing beyond the name comparison.");
+
 IREE_FLAG(int32_t, cuda_default_index, 0,
           "Specifies the index of the default CUDA device to use");
 
@@ -106,6 +111,8 @@ static iree_status_t iree_hal_cuda_driver_factory_try_create(
       FLAG_cuda_use_streams ? IREE_HAL_CUDA_COMMAND_BUFFER_MODE_STREAM
                             : IREE_HAL_CUDA_COMMAND_BUFFER_MODE_GRAPH;
   device_params.stream_tracing = FLAG_cuda_tracing;
+  device_params.stream_tracing_filter =
+      iree_make_cstring_view(FLAG_cuda_tracing_filter);
   device_params.async_allocations = FLAG_cuda_async_allocations;
 
   driver_options.default_device_index = FLAG_cuda_default_index;

@@ -416,6 +416,7 @@ IREE_API_EXPORT void iree_hal_cuda_device_params_initialize(
   out_params->queue_count = 1;
   out_params->command_buffer_mode = IREE_HAL_CUDA_COMMAND_BUFFER_MODE_GRAPH;
   out_params->stream_tracing = 0;
+  out_params->stream_tracing_filter = iree_string_view_empty();
   out_params->async_allocations = true;
 }
 
@@ -514,7 +515,8 @@ static iree_status_t iree_hal_cuda_device_create_internal(
 
     status = iree_hal_stream_tracing_context_allocate(
         (iree_hal_stream_tracing_device_interface_t*)tracing_device_interface,
-        device->identifier, device->params.stream_tracing, &device->block_pool,
+        device->identifier, device->params.stream_tracing,
+        device->params.stream_tracing_filter, &device->block_pool,
         host_allocator, &device->tracing_context);
   }
 

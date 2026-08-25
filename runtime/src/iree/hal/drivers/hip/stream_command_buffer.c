@@ -94,6 +94,7 @@ iree_status_t iree_hal_hip_stream_command_buffer_create(
   command_buffer->tracing_context = tracing_context;
   command_buffer->tracing_event_list.head = NULL;
   command_buffer->tracing_event_list.tail = NULL;
+  command_buffer->tracing_event_list.skipped_zone_count = 0;
   command_buffer->hip_stream = stream;
   iree_arena_initialize(block_pool, &command_buffer->arena);
 

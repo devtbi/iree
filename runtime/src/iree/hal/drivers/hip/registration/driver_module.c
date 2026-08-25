@@ -47,6 +47,11 @@ IREE_FLAG(
     "   1 : coarse command buffer level tracing enabled.\n"
     "   2 : fine-grained kernel level tracing enabled.\n");
 
+IREE_FLAG(string, hip_tracing_filter, "",
+          "Optional glob selecting which dispatches record tracing queries\n"
+          "when --hip_tracing=2, such as '*matmul*'. Dispatches that do not\n"
+          "match cost nothing beyond the name comparison.");
+
 IREE_FLAG(int32_t, hip_default_index, 0,
           "Specifies the index of the default HIP device to use");
 
@@ -95,6 +100,12 @@ static iree_status_t iree_hal_hip_driver_parse_flags(
       builder, IREE_SV("hip_async_caching"), FLAG_hip_async_caching));
   IREE_RETURN_IF_ERROR(iree_string_pair_builder_add_int32(
       builder, IREE_SV("hip_tracing"), FLAG_hip_tracing));
+  if (strlen(FLAG_hip_tracing_filter) != 0) {
+    IREE_RETURN_IF_ERROR(iree_string_pair_builder_add(
+        builder, iree_make_string_pair(
+                     IREE_SV("hip_tracing_filter"),
+                     iree_make_cstring_view(FLAG_hip_tracing_filter))));
+  }
   IREE_RETURN_IF_ERROR(iree_string_pair_builder_add_int32(
       builder, IREE_SV("hip_default_index"), FLAG_hip_default_index));
 
@@ -186,6 +197,8 @@ static iree_status_t iree_hal_hip_driver_populate_options(
     } else if (iree_string_view_equal(key, IREE_SV("hip_tracing"))) {
       IREE_RETURN_IF_ERROR(iree_hal_hip_try_parse_int32_option(
           key, value, &device_params->stream_tracing));
+    } else if (iree_string_view_equal(key, IREE_SV("hip_tracing_filter"))) {
+      device_params->stream_tracing_filter = value;
     } else if (iree_string_view_equal(key, IREE_SV("hip_default_index"))) {
       IREE_RETURN_IF_ERROR(iree_hal_hip_try_parse_int32_option(
           key, value, &driver_options->default_device_index));
