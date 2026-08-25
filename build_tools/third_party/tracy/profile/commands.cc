@@ -112,6 +112,17 @@ const char* PlotFormatName(tracy::PlotValueFormatting format) {
   }
 }
 
+// Adds the iree-profile statistics_row field names as aliases of the
+// aggregate fields so consumers written against either tool work.
+void AddStatisticsAliases(JsonRow& row, DurationStats& stats) {
+  row.UInt("sample_count", stats.count);
+  row.Int("total_duration_ns", stats.total);
+  row.Int("minimum_duration_ns", stats.count ? stats.min : 0);
+  row.Int("maximum_duration_ns", stats.count ? stats.max : 0);
+  row.Str("time_domain", "iree_host_time_ns");
+  row.Str("duration_unit", "ns");
+}
+
 // Adds the standard aggregate fields to |row|.
 void AddStats(JsonRow& row, DurationStats& stats) {
   row.UInt("count", stats.count);
@@ -740,6 +751,7 @@ int RunStatistics(Trace& trace, const Options& options, FILE* out) {
       row.Str("function", group.function).Str("file", group.file);
       row.UInt("line", group.line);
       AddStats(row, group.stats);
+      AddStatisticsAliases(row, group.stats);
       row.Int("self_total_ns", group.self_total);
       row.UInt("thread_count", group.thread_counts.size());
       row.Write(out);
@@ -747,8 +759,10 @@ int RunStatistics(Trace& trace, const Options& options, FILE* out) {
     for (GpuGroup& group : gpu_groups) {
       JsonRow row("statistics_row");
       row.Str("row_type", "gpu_zone").Str("event_name", group.key);
+      row.Str("function_name", group.key);
       AddContext(row, trace.FindGpuContext(group.context));
       AddStats(row, group.stats);
+      AddStatisticsAliases(row, group.stats);
       row.UInt("unresolved_count", group.unresolved);
       row.Write(out);
     }

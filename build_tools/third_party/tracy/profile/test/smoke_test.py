@@ -122,6 +122,26 @@ def main():
     run(tool, trace, "plot")  # No plots in this capture: empty but successful.
     assert "Record types" in run(tool, trace, "--agents_md")
 
+    export = run(tool, trace, "export", "--format=ireeperf-jsonl", "--output=-")
+    export_rows = [json.loads(line) for line in export.splitlines() if line.strip()]
+    assert export_rows[0]["record_type"] == "schema", export_rows[0]
+    assert export_rows[0]["schema_version"] == 15, export_rows[0]
+    assert export_rows[0]["format"] == "ireeperf-jsonl", export_rows[0]
+    assert all(row["schema_version"] == 15 for row in export_rows)
+    record_types = {}
+    for row in export_rows[1:]:
+        assert "source_record_index" in row, row
+        record_types[row["record_type"]] = record_types.get(row["record_type"], 0) + 1
+    assert record_types["dispatch_event"] == 600, record_types
+    assert record_types["queue_device_event"] == 400, record_types
+    assert record_types["queue_event"] == 200, record_types
+    assert record_types["clock_correlation"] == 2, record_types
+    assert record_types["queue"] == 2 and record_types["device"] == 1, record_types
+    assert record_types["executable_function"] == 3, record_types
+    dispatch = next(r for r in export_rows if r["record_type"] == "dispatch_event")
+    assert dispatch["valid"] and dispatch["derived_time_available"], dispatch
+    assert dispatch["end_tick"] - dispatch["start_tick"] == dispatch["duration_ns"]
+
     print("iree-tracy-profile smoke test passed")
 
 
