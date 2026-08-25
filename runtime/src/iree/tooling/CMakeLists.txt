@@ -124,6 +124,7 @@ iree_cc_library(
     iree::hal::utils::mpi_channel_provider
     iree::hal::utils::profile_file
     iree::hal::utils::statistics_sink
+    iree::hal::utils::tracy_sink
     iree::io::file_handle
   PUBLIC
 )

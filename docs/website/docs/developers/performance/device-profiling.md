@@ -207,6 +207,20 @@ queue submission and command buffer recording on the same device. In practice,
 start profiling before issuing the workload and end it after the device is idle
 or after the application-visible synchronization point you care about.
 
+## Forward to Tracy
+
+When the runtime is built with Tracy instrumentation, `--device_profiling_tracy`
+forwards the selected data families to the tracing provider as GPU zones instead
+of writing a bundle. The same timestamps the producer captured for the bundle
+are placed on the Tracy timeline, so this adds nothing to the cost of the
+profiling session and works with the capture filters above. See
+[profiling with Tracy](./profiling-with-tracy.md#reducing-tracing-overhead).
+
+```shell
+iree-run-module --device=amdgpu --module=/tmp/model.vmfb --function=main \
+  --device_profiling_mode=dispatch-events --device_profiling_tracy
+```
+
 ## Inspect with iree-profile
 
 `iree-profile` is the command line reader for `.ireeprof` bundles:

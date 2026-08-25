@@ -246,6 +246,93 @@ TRACY_NO_EXIT=1 IREE_PRESERVE_DYLIB_TEMP_FILES=1 sudo iree-run-module \
   ...
 ```
 
+### :octicons-stopwatch-16: Reducing tracing overhead
+
+Tracing has a cost, and most of it is optional. Roughly in order of impact:
+
+#### Callstacks dominate
+
+`IREE_TRACING_MODE=3` captures a callstack on every allocation and mode `4` on
+every zone as well. A zone costs on the order of tens of nanoseconds without a
+callstack and over ten times that with one. Stay on mode `2` unless you are
+hunting for missing instrumentation, or lower the depth instead of dropping the
+feature:
+
+```shell
+cmake ... -DIREE_TRACING_MODE=4 -DIREE_TRACING_MAX_CALLSTACK_DEPTH=4
+```
+
+`IREE_TRACING_MAX_CALLSTACK_DEPTH=0` disables callstack capture entirely while
+keeping the other features of the mode.
+
+#### Only pay while a profiler is connected
+
+Build with Tracy's on-demand mode to make instrumentation nearly free when no
+profiler is attached:
+
+```shell
+cmake ... -DIREE_ENABLE_RUNTIME_TRACING=ON -DTRACY_ON_DEMAND=ON
+```
+
+IREE zones then cost a single atomic load until a Tracy client connects, and
+Tracy stops buffering events in memory while disconnected. Zones that were open
+when the connection was established are not recorded. This is the right default
+for a traced binary that also runs un-profiled.
+
+#### Trace fewer GPU dispatches
+
+The HIP and CUDA drivers insert two timestamp queries per traced dispatch. Both
+the verbosity and the set of dispatches are runtime flags:
+
+```shell
+# 0 = off, 1 = command buffer spans only, 2 = every dispatch (default).
+--hip_tracing=1
+# With --hip_tracing=2, only record dispatches whose name matches the glob.
+--hip_tracing_filter='*matmul*'
+```
+
+Dispatches excluded by the filter record no queries at all. `--cuda_tracing`
+and `--cuda_tracing_filter` behave the same way, and the HIP flags are also
+accepted as device URI parameters (`hip://0?hip_tracing_filter=*softmax*`).
+
+#### Disable background capture
+
+Tracy's sampling profiler, context switch capture, and system tracing run
+regardless of how many zones your program emits. They can be disabled per run
+with environment variables, which is preferable to the equivalent CMake
+options because those compile the choice in:
+
+```shell
+TRACY_NO_SAMPLING=1 TRACY_NO_CONTEXT_SWITCH=1 TRACY_NO_SYS_TRACE=1 iree-run-module ...
+# Or keep sampling at a lower rate:
+TRACY_SAMPLING_HZ=1000 iree-run-module ...
+```
+
+#### Reuse the HAL profiling timestamps
+
+Backends that implement HAL-native
+[device profiling](./device-profiling.md) (AMDGPU, Vulkan, and the local CPU
+drivers) already capture device timestamps as part of their own queue
+processing. `--device_profiling_tracy` forwards those records to Tracy as GPU
+zones instead of writing a `.ireeprof` bundle:
+
+```shell
+iree-benchmark-module \
+    --device=amdgpu \
+    --module=/tmp/model.vmfb --function=main \
+    --device_profiling_mode=dispatch-events,device-queue-events \
+    --device_profiling_filter_function='*attention*' \
+    --device_profiling_tracy
+```
+
+This costs exactly what the profiling session costs: no per-dispatch event
+records, no host synchronization to read them back, and the
+`--device_profiling_filter_*` flags apply. Dispatches appear on a
+`dev<N>/q<M> dispatch` GPU context named by executable function, queue
+operations on `dev<N>/q<M> queue`, and host-side spans on `... host` and
+`... submit` contexts. Memory events, counters, and executable traces are only
+available through `iree-profile`.
+
 ### :octicons-server-16: Remote capture (e.g. SSH, Android)
 
 Tracy's client/server connection uses TCP port 8086 by default. If the

@@ -20,6 +20,7 @@
 #include "iree/hal/utils/mpi_channel_provider.h"
 #include "iree/hal/utils/profile_file.h"
 #include "iree/hal/utils/statistics_sink.h"
+#include "iree/hal/utils/tracy_sink.h"
 #include "iree/io/file_handle.h"
 
 //===----------------------------------------------------------------------===//
@@ -463,6 +464,15 @@ IREE_FLAG(
     "--device_profiling_mode is nonempty. The output is written by tooling\n"
     "using a generic profile sink.");
 IREE_FLAG(
+    bool, device_profiling_tracy, false,
+    "Forwards the HAL-native profiling records selected by\n"
+    "--device_profiling_mode to the Tracy tracing provider as GPU zones\n"
+    "instead of writing a profiling bundle. The producer's own device\n"
+    "timestamps are reused so this adds nothing to the cost of the profiling\n"
+    "session. Requires a runtime built with IREE_ENABLE_RUNTIME_TRACING and\n"
+    "device instrumentation; cannot be combined with\n"
+    "--device_profiling_output or --print_device_statistics.");
+IREE_FLAG(
     string, device_profiling_filter_function, "",
     "Optional glob pattern selecting executable function names that should "
     "emit\n"
@@ -618,6 +628,9 @@ static iree_status_t iree_hal_profile_sink_create_from_flags(
   IREE_ASSERT_ARGUMENT(out_sink);
   *out_sink = NULL;
 
+  if (FLAG_device_profiling_tracy) {
+    return iree_hal_profile_tracy_sink_create(host_allocator, out_sink);
+  }
   if (strlen(FLAG_device_profiling_output) == 0) return iree_ok_status();
 
   iree_io_file_handle_t* file_handle = NULL;
@@ -894,6 +907,13 @@ static iree_status_t iree_hal_begin_device_list_profiling_from_flags(
                             "--print_device_statistics cannot be combined with "
                             "--device_profiling_output");
   }
+  if (FLAG_device_profiling_tracy &&
+      (statistics_requested || strlen(FLAG_device_profiling_output) != 0)) {
+    return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                            "--device_profiling_tracy cannot be combined with "
+                            "--device_profiling_output or "
+                            "--print_device_statistics");
+  }
   if (FLAG_device_profiling_flush_interval_ms < 0) {
     return iree_make_status(
         IREE_STATUS_INVALID_ARGUMENT,
@@ -906,10 +926,12 @@ static iree_status_t iree_hal_begin_device_list_profiling_from_flags(
                               "--device_profiling_mode=counters or "
                               "--device_profiling_mode=counter-ranges");
     }
-    if (strlen(FLAG_device_profiling_output) != 0) {
-      return iree_make_status(
-          IREE_STATUS_INVALID_ARGUMENT,
-          "--device_profiling_output requires --device_profiling_mode");
+    if (strlen(FLAG_device_profiling_output) != 0 ||
+        FLAG_device_profiling_tracy) {
+      return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
+                              "--device_profiling_output and "
+                              "--device_profiling_tracy require "
+                              "--device_profiling_mode");
     }
     if (iree_hal_device_profiling_filter_flags_present() &&
         !statistics_requested) {
@@ -940,10 +962,12 @@ static iree_status_t iree_hal_begin_device_list_profiling_from_flags(
         "or --device_profiling_mode=counter-ranges");
   }
   if (options.data_families != IREE_HAL_DEVICE_PROFILING_DATA_NONE &&
-      strlen(FLAG_device_profiling_output) == 0 && !statistics_requested) {
+      strlen(FLAG_device_profiling_output) == 0 && !statistics_requested &&
+      !FLAG_device_profiling_tracy) {
     return iree_make_status(IREE_STATUS_INVALID_ARGUMENT,
                             "--device_profiling_mode requires "
-                            "--device_profiling_output");
+                            "--device_profiling_output or "
+                            "--device_profiling_tracy");
   }
 
   IREE_RETURN_IF_ERROR(

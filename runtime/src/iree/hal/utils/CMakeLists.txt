@@ -293,6 +293,33 @@ iree_cc_test(
     iree::testing::gtest_main
 )
 
+iree_cc_library(
+  NAME
+    tracy_sink
+  HDRS
+    "tracy_sink.h"
+  SRCS
+    "tracy_sink.c"
+  DEPS
+    iree::base
+    iree::base::threading
+    iree::hal
+  PUBLIC
+)
+
+iree_cc_test(
+  NAME
+    tracy_sink_test
+  SRCS
+    "tracy_sink_test.cc"
+  DEPS
+    ::tracy_sink
+    iree::base
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 iree_cc_test(
   NAME
     profile_file_test

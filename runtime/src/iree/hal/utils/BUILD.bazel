@@ -250,6 +250,29 @@ iree_runtime_cc_test(
     ],
 )
 
+iree_runtime_cc_library(
+    name = "tracy_sink",
+    srcs = ["tracy_sink.c"],
+    hdrs = ["tracy_sink.h"],
+    deps = [
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/base/threading",
+        "//runtime/src/iree/hal",
+    ],
+)
+
+iree_runtime_cc_test(
+    name = "tracy_sink_test",
+    srcs = ["tracy_sink_test.cc"],
+    deps = [
+        ":tracy_sink",
+        "//runtime/src/iree/base",
+        "//runtime/src/iree/hal",
+        "//runtime/src/iree/testing:gtest",
+        "//runtime/src/iree/testing:gtest_main",
+    ],
+)
+
 iree_runtime_cc_test(
     name = "profile_file_test",
     srcs = ["profile_file_test.cc"],
