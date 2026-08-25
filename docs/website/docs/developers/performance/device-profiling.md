@@ -213,7 +213,15 @@ When the runtime is built with Tracy instrumentation, `--device_profiling_tracy`
 forwards the selected data families to the tracing provider as GPU zones instead
 of writing a bundle. The same timestamps the producer captured for the bundle
 are placed on the Tracy timeline, so this adds nothing to the cost of the
-profiling session and works with the capture filters above. See
+profiling session and works with the capture filters above. The resulting
+`.tracy` capture can be inspected with the Tracy UI or queried from the command
+line with [`iree-tracy-profile`](./profiling-with-tracy.md#inspecting-captures-from-the-command-line),
+which offers the same commands and JSONL rows as `iree-profile`, and its
+`export --format=ireeperf-jsonl` feeds `iree-profile-render` unchanged.
+
+Dispatch, queue, host-execution, and submission records are forwarded.
+Hardware counters, executable traces, memory lifecycle events, and command
+buffer structure remain bundle-only. See
 [profiling with Tracy](./profiling-with-tracy.md#reducing-tracing-overhead).
 
 ```shell

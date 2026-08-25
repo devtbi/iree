@@ -327,7 +327,11 @@ iree-benchmark-module \
 
 This costs exactly what the profiling session costs: no per-dispatch event
 records, no host synchronization to read them back, and the
-`--device_profiling_filter_*` flags apply. Dispatches appear on a
+`--device_profiling_filter_*` flags apply. Measured on a Qwen3-0.6B prefill
+(568 dispatches per invocation, `local-task`, 16-core desktop CPU) the
+per-invocation latency with a Tracy capture attached was within measurement
+noise (under 2%) of both an uninstrumented runtime and the same profiling
+session written to a `.ireeprof` bundle. Dispatches appear on a
 `dev<N>/q<M> dispatch` GPU context named by executable function, queue
 operations on `dev<N>/q<M> queue`, and host-side spans on `... host` and
 `... submit` contexts. Memory events, counters, and executable traces are only
