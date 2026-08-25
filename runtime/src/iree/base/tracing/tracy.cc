@@ -413,6 +413,12 @@ uint8_t iree_tracing_gpu_context_allocate(iree_tracing_gpu_context_type_t type,
     tracy::MemWrite(&item->gpuNewContext.context, context_id);
     tracy::MemWrite(&item->gpuNewContext.flags, context_flags);
     tracy::MemWrite(&item->gpuNewContext.type, (tracy::GpuContextType)type);
+#ifdef TRACY_ON_DEMAND
+    // Contexts may be created while no profiler is attached; replay the
+    // announcement on connect or the server would crash on the first zone
+    // referencing an unknown context (as tracy's own GPU wrappers do).
+    tracy::GetProfiler().DeferItem(*item);
+#endif  // TRACY_ON_DEMAND
     tracy::Profiler::QueueSerialFinish();
   }
 
@@ -428,6 +434,9 @@ uint8_t iree_tracing_gpu_context_allocate(iree_tracing_gpu_context_type_t type,
     tracy::MemWrite(&item->gpuContextNameFat.context, context_id);
     tracy::MemWrite(&item->gpuContextNameFat.ptr, (uint64_t)cloned_name);
     tracy::MemWrite(&item->gpuContextNameFat.size, (uint16_t)name_length);
+#ifdef TRACY_ON_DEMAND
+    tracy::GetProfiler().DeferItem(*item);
+#endif  // TRACY_ON_DEMAND
     tracy::Profiler::QueueSerialFinish();
   }
 
