@@ -11,6 +11,7 @@ if(IREE_BUILD_TRACY)
   message(STATUS "Bundling Tracy CLI tools with Python API")
   set(_TRACY_ENABLED ON)
   list(APPEND _EXTRA_INSTALL_TOOL_TARGETS "IREETracyCaptureServer")
+  list(APPEND _EXTRA_INSTALL_TOOL_TARGETS "IREETracyProfile")
 endif()
 
 if(IREE_BUILD_BENCHMARKS)
@@ -159,6 +160,7 @@ iree_py_library(
     "iree/_runtime/scripts/iree_run_module/__main__.py"
     "iree/_runtime/scripts/iree_run_replay/__main__.py"
     "iree/_runtime/scripts/iree_tracy_capture/__main__.py"
+    "iree/_runtime/scripts/iree_tracy_profile/__main__.py"
   PYEXT_DEPS
     iree_runtime_bindings_python_PyExtRt
 )
@@ -289,6 +291,11 @@ if(_TRACY_ENABLED)
     TARGET runtime
     FROM_TOOL_TARGET IREETracyCaptureServer
     TO_EXE_NAME iree/_runtime_libs/iree-tracy-capture
+  )
+  iree_symlink_tool(
+    TARGET runtime
+    FROM_TOOL_TARGET IREETracyProfile
+    TO_EXE_NAME iree/_runtime_libs/iree-tracy-profile
   )
 endif()
 

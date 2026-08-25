@@ -684,7 +684,11 @@ setup(
                     "iree-benchmark-module*",
                     "iree-benchmark-replay*",
                 ]
-                + (["iree-tracy-capture"] if ENABLE_TRACY_TOOLS else [])
+                + (
+                    ["iree-tracy-capture", "iree-tracy-profile"]
+                    if ENABLE_TRACY_TOOLS
+                    else []
+                )
             }
             if ENABLE_TRACY
             else {}
@@ -712,7 +716,8 @@ setup(
         ]
         + (
             [
-                "iree-tracy-capture = iree._runtime.scripts.iree_tracy_capture.__main__:main"
+                "iree-tracy-capture = iree._runtime.scripts.iree_tracy_capture.__main__:main",
+                "iree-tracy-profile = iree._runtime.scripts.iree_tracy_profile.__main__:main",
             ]
             if ENABLE_TRACY_TOOLS
             else []

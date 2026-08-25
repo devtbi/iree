@@ -211,3 +211,42 @@ target_link_libraries(IREETracyCaptureServer
     IREETracyCommon
     IREETracyServer
 )
+
+#-------------------------------------------------------------------------------
+# Offline capture inspection tool
+#-------------------------------------------------------------------------------
+
+add_executable(IREETracyProfile
+  profile/agents_md.cc
+  profile/commands.cc
+  profile/export.cc
+  profile/main.cc
+  profile/trace.cc
+)
+set_target_properties(IREETracyProfile
+  PROPERTIES
+    OUTPUT_NAME "iree-tracy-profile"
+)
+setup_cxx_options(IREETracyProfile)
+target_include_directories(IREETracyProfile
+  PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_link_libraries(IREETracyProfile
+  PRIVATE
+    IREETracyCommon
+    IREETracyServer
+)
+
+if(IREE_BUILD_TESTS)
+  find_package(Python3 COMPONENTS Interpreter)
+  if(Python3_Interpreter_FOUND)
+    add_test(
+      NAME iree_tracy_profile_smoke_test
+      COMMAND ${Python3_EXECUTABLE}
+        "${CMAKE_CURRENT_SOURCE_DIR}/profile/test/smoke_test.py"
+        "$<TARGET_FILE:IREETracyProfile>"
+        "${CMAKE_CURRENT_SOURCE_DIR}/profile/test/hal_profile_sink.tracy"
+    )
+  endif()
+endif()

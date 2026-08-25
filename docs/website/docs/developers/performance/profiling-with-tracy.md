@@ -358,6 +358,35 @@ TRACY_PORT=1234 iree-benchmark-module \
   ...
 ```
 
+## :octicons-terminal-16: Inspecting captures from the command line
+
+`iree-tracy-profile` reads `.tracy` files without the GUI and prints either
+text reports or JSON Lines, using the same command shape as
+[`iree-profile`](./device-profiling.md#inspect-with-iree-profile). It is built
+alongside `iree-tracy-capture` (`-DIREE_BUILD_TRACY=ON`) and ships in the
+`iree-base-runtime` Python package.
+
+```shell
+iree-tracy-profile summary run.tracy
+iree-tracy-profile explain run.tracy
+iree-tracy-profile dispatch --format=jsonl run.tracy | \
+    jq 'select(.type=="dispatch_group") | {key,count,avg_ns,p99_ns,share}'
+iree-tracy-profile zone --format=jsonl --zone_events --filter='*dispatch*' \
+    run.tracy | jq -c 'select(.duration_ns > 1000000)'
+```
+
+Commands: `summary`, `statistics`, `dispatch`, `queue`, `zone`, `thread`,
+`message`, `plot`, `memory`, `frame`, `explain`, `cat`, and
+`export --format=ireeperf-jsonl` for [`iree-profile-render`](./device-profiling.md#render-external-timelines).
+`--filter=glob` narrows by name, `--id=N` fetches one event, and the
+`--*_events` flags stream individual events instead of aggregates. Every JSONL
+row is keyed by `type`; `iree-tracy-profile --agents_md` prints a guide to the
+record types and cross-reference recipes suitable for an `AGENTS.md`.
+
+Device timelines forwarded by `--device_profiling_tracy` appear as GPU
+contexts named `dev<N>/q<M> <lane>`; the `dispatch` and `queue` commands
+select the matching lanes automatically.
+
 ## :octicons-graph-16: Touring the Tracy profiler UI
 
 The initial view should look like this:
