@@ -44,16 +44,28 @@ endif()
 # See https://github.com/wolfpld/tracy/blob/master/cmake/vendor.cmake
 #-------------------------------------------------------------------------------
 
+# Used to apply tracy's own vendored dependency patches (see below).
+find_program(PATCH_EXECUTABLE patch)
+if(NOT PATCH_EXECUTABLE)
+  message(STATUS "Could not find `patch` (Tracy server will not be built).")
+  message(STATUS "  Ubuntu/Debian: `apt install patch`")
+  message(STATUS "  MacOS: ships with the Xcode command line tools")
+  return()
+endif()
+
 include(FetchContent)
 
+# NOTE: pin and option list mirror the CPMAddPackage(capstone) block in
+# third_party/tracy/cmake/vendor.cmake; re-diff against it when bumping tracy.
 FetchContent_Declare(
   capstone
   GIT_REPOSITORY https://github.com/capstone-engine/capstone.git
-  GIT_TAG        97db712c91e964718f9cc300e81b9cf76b31a22e # 6.0.0-Alpha1
+  GIT_TAG        55c20f4260100b59c9d74ad4f3004256f619e60b # 6.0.0-Alpha10
   EXCLUDE_FROM_ALL
 )
 set(CAPSTONE_X86_ATT_DISABLE ON CACHE BOOL "" FORCE)
 set(CAPSTONE_ALPHA_SUPPORT OFF CACHE BOOL "" FORCE)
+set(CAPSTONE_ARC_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_HPPA_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_LOONGARCH_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_M680X_SUPPORT OFF CACHE BOOL "" FORCE)
@@ -66,7 +78,6 @@ set(CAPSTONE_SYSTEMZ_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_XCORE_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_TRICORE_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_TMS320C64X_SUPPORT OFF CACHE BOOL "" FORCE)
-set(CAPSTONE_M680X_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_EVM_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_WASM_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_BPF_SUPPORT OFF CACHE BOOL "" FORCE)
@@ -76,10 +87,21 @@ set(CAPSTONE_XTENSA_SUPPORT OFF CACHE BOOL "" FORCE)
 set(CAPSTONE_BUILD_MACOS_THIN ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(capstone)
 
+# NOTE: the patches come from tracy itself; keep them in sync with
+# third_party/tracy/cmake/vendor.cmake when updating the submodule.
 FetchContent_Declare(
   PPQSort
   GIT_REPOSITORY https://github.com/GabTux/PPQSort.git
-  GIT_TAG        4b964020d67b435dae7ebac7b8f5ecea1f421c58 # v1.0.3
+  GIT_TAG        21c5a20ca3daf572caaf0a8522db32e27e28fa1d # v1.0.6
+  PATCH_COMMAND
+    ${CMAKE_COMMAND}
+      -DPATCH_EXECUTABLE=${PATCH_EXECUTABLE}
+      -DSOURCE_DIR=<SOURCE_DIR>
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/apply_patches.cmake"
+      --
+      "${TRACY_SOURCE_DIR}/cmake/ppqsort-nodebug.patch"
+      "${TRACY_SOURCE_DIR}/cmake/ppqsort-semaphore.patch"
+  UPDATE_DISCONNECTED TRUE
   EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(PPQSort)
@@ -97,9 +119,16 @@ function(setup_cxx_options name)
     PRIVATE
       $<$<CXX_COMPILER_ID:GNU,Clang>:-Wno-unused-result>
   )
+  # The capture tool never displays per-zone statistics; upstream's
+  # capture/CMakeLists.txt builds the server with them compiled out too.
+  target_compile_definitions(${name}
+    PUBLIC
+      TRACY_NO_STATISTICS
+  )
   target_include_directories(${name}
     PUBLIC
-      ${TRACY_SOURCE_DIR}/imgui
+      ${TRACY_SOURCE_DIR}/public/common
+      ${TRACY_SOURCE_DIR}/server
       ${TRACY_DEPS_INCLUDE_DIRS}
       ${capstone_SOURCE_DIR}/include/capstone
   )
@@ -108,8 +137,8 @@ function(setup_cxx_options name)
       ${TRACY_DEPS_LIBRARIES}
       ${CMAKE_DL_LIBS}
       ${CMAKE_THREAD_LIBS_INIT}
-      capstone
-      PPQSort
+      capstone_static
+      PPQSort::PPQSort
   )
   target_link_directories(${name}
     PRIVATE
@@ -145,14 +174,38 @@ target_link_libraries(IREETracyServer
 # Standalone capture server
 #-------------------------------------------------------------------------------
 
+# capture.cpp includes a generated GitRef.hpp, which upstream fills from git via
+# cmake/GitRef.cmake so a development checkout can report the commit it was built
+# from. The submodule is pinned to a release tag, so that answer is a constant -
+# and capture.cpp prints it next to tracy::Version, which already says the same
+# thing. Write the tag directly rather than depending on git at configure time;
+# update it when bumping tracy.
+set(_TRACY_GIT_REF "v0.14.1")
+# Write via a temp + copy-if-different so a reconfigure does not bump the mtime
+# and force capture.cpp to rebuild.
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/GitRef.hpp.tmp"
+  "#pragma once\n"
+  "namespace tracy { static inline const char* GitRef = \"${_TRACY_GIT_REF}\"; }\n"
+)
+configure_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/GitRef.hpp.tmp"
+  "${CMAKE_CURRENT_BINARY_DIR}/GitRef.hpp"
+  COPYONLY
+)
+
 add_executable(IREETracyCaptureServer
   ${TRACY_SOURCE_DIR}/capture/src/capture.cpp
+  ${TRACY_SOURCE_DIR}/capture/src/CaptureOutput.cpp
 )
 set_target_properties(IREETracyCaptureServer
   PROPERTIES
     OUTPUT_NAME "iree-tracy-capture"
 )
 setup_cxx_options(IREETracyCaptureServer)
+target_include_directories(IREETracyCaptureServer
+  PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
 target_link_libraries(IREETracyCaptureServer
   PRIVATE
     IREETracyCommon

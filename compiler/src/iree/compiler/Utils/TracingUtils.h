@@ -47,10 +47,20 @@ enum {
 // Fork of IREE_TRACE_FRAME_MARK.
 #define IREE_COMPILER_TRACE_FRAME_MARK() ___tracy_emit_frame_mark(NULL)
 
+// Maps the levels above onto tracy message severities. Fork of
+// IREE_TRACING_MESSAGE_SEVERITY_*.
+#define IREE_TRACING_COMPILER_MESSAGE_SEVERITY_ERROR TracyMessageSeverityError
+#define IREE_TRACING_COMPILER_MESSAGE_SEVERITY_WARNING                         \
+  TracyMessageSeverityWarning
+#define IREE_TRACING_COMPILER_MESSAGE_SEVERITY_INFO TracyMessageSeverityInfo
+#define IREE_TRACING_COMPILER_MESSAGE_SEVERITY_VERBOSE TracyMessageSeverityTrace
+#define IREE_TRACING_COMPILER_MESSAGE_SEVERITY_DEBUG TracyMessageSeverityDebug
+
 // Fork of IREE_TRACE_MESSAGE_DYNAMIC, taking std::string (or llvm::StringRef).
 #define IREE_COMPILER_TRACE_MESSAGE_DYNAMIC(level, value_string)               \
-  ___tracy_emit_messageC(value_string.data(), value_string.size(),             \
-                         IREE_TRACING_COMPILER_MESSAGE_LEVEL_##level, 0)
+  ___tracy_emit_logString(IREE_TRACING_COMPILER_MESSAGE_SEVERITY_##level,      \
+                          IREE_TRACING_COMPILER_MESSAGE_LEVEL_##level, 0,      \
+                          value_string.size(), value_string.data())
 
 // Adds a pass to |passManager| that marks the beginning of a named frame.
 // * |frameName| must be a null-terminated string

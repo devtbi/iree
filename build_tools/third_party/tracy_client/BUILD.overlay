@@ -23,6 +23,10 @@ cc_library(
         "public/client/*.h",
         "public/client/*.hpp",
         "public/client/*.cpp",
+        # Platform backends textually included from TracySysTrace.cpp.
+        "public/client/apple/*.cpp",
+        "public/client/windows/*.h",
+        "public/client/windows/*.cpp",
     ]),
     includes = [
         "public",
