@@ -158,10 +158,55 @@ void iree_tracing_publish_source_file(const void* filename,
   storage->mutex.unlock();
 }
 
+#if defined(TRACY_ON_DEMAND)
+
+// Zone ids are only used by tracy to pair begin/end validation events so we
+// are free to choose them: the low bits come from tracy's counter and the top
+// byte is the connection generation the zone was opened under.
+#define IREE_TRACING_ZONE_ID_CONNECTION_SHIFT 24
+#define IREE_TRACING_ZONE_ID_COUNTER_MASK 0x00FFFFFFu
+
+static iree_zone_id_t iree_tracing_allocate_zone_id() {
+  if (!tracy::GetProfiler().IsConnected()) return 0;
+  uint32_t counter =
+      tracy::GetProfiler().GetNextZoneId() & IREE_TRACING_ZONE_ID_COUNTER_MASK;
+  if (counter == 0) {
+    counter = tracy::GetProfiler().GetNextZoneId() &
+              IREE_TRACING_ZONE_ID_COUNTER_MASK;
+    if (counter == 0) counter = 1;
+  }
+  const uint32_t connection_id =
+      (uint32_t)(tracy::GetProfiler().ConnectionId() & 0xFFu);
+  return counter | (connection_id << IREE_TRACING_ZONE_ID_CONNECTION_SHIFT);
+}
+
+TracyCZoneCtx iree_tracing_make_zone_ctx(iree_zone_id_t zone_id) {
+  TracyCZoneCtx ctx;
+  ctx.id = zone_id;
+  ctx.connectionId = tracy::GetProfiler().ConnectionId();
+  // A zone begun while disconnected or under a previous connection has no
+  // matching begin on the server; drop it.
+  ctx.active =
+      zone_id != 0 && (zone_id >> IREE_TRACING_ZONE_ID_CONNECTION_SHIFT) ==
+                          (uint32_t)(ctx.connectionId & 0xFFu);
+  return ctx;
+}
+
+#else
+
+static iree_zone_id_t iree_tracing_allocate_zone_id() {
+  return tracy::GetProfiler().GetNextZoneId();
+}
+
+#endif  // TRACY_ON_DEMAND
+
 iree_zone_id_t iree_tracing_zone_begin_impl(
     const iree_tracing_location_t* src_loc, const char* name,
     size_t name_length) {
-  const iree_zone_id_t zone_id = tracy::GetProfiler().GetNextZoneId();
+  const iree_zone_id_t zone_id = iree_tracing_allocate_zone_id();
+#if defined(TRACY_ON_DEMAND)
+  if (zone_id == 0) return 0;
+#endif  // TRACY_ON_DEMAND
 
 #ifndef TRACY_NO_VERIFY
   {
@@ -212,11 +257,14 @@ iree_zone_id_t iree_tracing_zone_begin_external_impl(
     const char* file_name, size_t file_name_length, uint32_t line,
     const char* function_name, size_t function_name_length, const char* name,
     size_t name_length) {
+  const iree_zone_id_t zone_id = iree_tracing_allocate_zone_id();
+#if defined(TRACY_ON_DEMAND)
+  if (zone_id == 0) return 0;
+#endif  // TRACY_ON_DEMAND
+
   uint64_t src_loc = tracy::Profiler::AllocSourceLocation(
       line, file_name, file_name_length, function_name, function_name_length,
       name, name_length);
-
-  const iree_zone_id_t zone_id = tracy::GetProfiler().GetNextZoneId();
 
 #ifndef TRACY_NO_VERIFY
   {

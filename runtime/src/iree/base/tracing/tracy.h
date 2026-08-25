@@ -111,11 +111,19 @@ extern "C" {
 
 #if IREE_TRACING_FEATURES
 
+#if defined(TRACY_ON_DEMAND)
+// With on-demand profiling zones are only recorded while a profiler is
+// connected: iree_tracing_zone_begin_impl returns 0 when disconnected and the
+// zone id carries the connection generation so that ends emitted after a
+// reconnect are dropped, matching the behavior of tracy's own C zone API.
+TracyCZoneCtx iree_tracing_make_zone_ctx(iree_zone_id_t zone_id);
+#else
 #ifdef __cplusplus
 #define iree_tracing_make_zone_ctx(zone_id) TracyCZoneCtx{zone_id, 1}
 #else
 #define iree_tracing_make_zone_ctx(zone_id) (TracyCZoneCtx){zone_id, 1}
 #endif  // __cplusplus
+#endif  // TRACY_ON_DEMAND
 
 void iree_tracing_tracy_initialize();
 void iree_tracing_tracy_deinitialize();
