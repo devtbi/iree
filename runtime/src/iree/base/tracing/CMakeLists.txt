@@ -31,8 +31,10 @@ elseif(${IREE_TRACING_PROVIDER} STREQUAL "tracy")
       provider
     HDRS
       "tracy.h"
+      "tracy_recorder.h"
     SRCS
       "tracy.cc"
+      "tracy_recorder.cc"
     DEPS
       iree::base::core_headers
       Tracy::TracyClient

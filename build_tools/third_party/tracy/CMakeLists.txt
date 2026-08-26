@@ -219,6 +219,7 @@ target_link_libraries(IREETracyCaptureServer
 add_executable(IREETracyProfile
   profile/agents_md.cc
   profile/commands.cc
+  profile/convert.cc
   profile/export.cc
   profile/main.cc
   profile/trace.cc
@@ -248,5 +249,16 @@ if(IREE_BUILD_TESTS)
         "$<TARGET_FILE:IREETracyProfile>"
         "${CMAKE_CURRENT_SOURCE_DIR}/profile/test/hal_profile_sink.tracy"
     )
+    # IREE_TRACY_CAPTURE_FILE needs a tracing-enabled tool to drive; tools are
+    # configured before this directory so the target check is reliable.
+    if(IREE_ENABLE_RUNTIME_TRACING AND TARGET iree-run-module)
+      add_test(
+        NAME iree_tracy_capture_file_test
+        COMMAND ${Python3_EXECUTABLE}
+          "${CMAKE_CURRENT_SOURCE_DIR}/profile/test/capture_file_test.py"
+          "$<TARGET_FILE:iree-run-module>"
+          "$<TARGET_FILE:IREETracyProfile>"
+      )
+    endif()
   endif()
 endif()

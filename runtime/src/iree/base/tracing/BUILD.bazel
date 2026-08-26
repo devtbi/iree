@@ -78,8 +78,14 @@ iree_runtime_cc_library(
 
 iree_runtime_cc_library(
     name = "tracy",
-    srcs = ["tracy.cc"],
-    hdrs = ["tracy.h"],
+    srcs = [
+        "tracy.cc",
+        "tracy_recorder.cc",
+    ],
+    hdrs = [
+        "tracy.h",
+        "tracy_recorder.h",
+    ],
     defines = [
         "IREE_TRACING_PROVIDER_H=\\\"iree/base/tracing/tracy.h\\\"",
         "IREE_TRACING_MODE=2",

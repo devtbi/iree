@@ -308,6 +308,41 @@ TRACY_NO_SAMPLING=1 TRACY_NO_CONTEXT_SWITCH=1 TRACY_NO_SYS_TRACE=1 iree-run-modu
 TRACY_SAMPLING_HZ=1000 iree-run-module ...
 ```
 
+#### Capture to a file from one process
+
+Tracy's client only ever streams to a server, but the server does not have to be
+the profiler. `IREE_TRACY_CAPTURE_FILE` starts a recorder thread inside the
+process itself, which connects to the client over loopback and writes what it
+receives to a file. Nothing is spawned, and no profiler needs to be attached or
+even installed:
+
+```shell
+IREE_TRACY_CAPTURE_FILE=/tmp/run.tracyrec iree-benchmark-module \
+    --device=vulkan --module=/tmp/model.vmfb --function=main \
+    --device_profiling_mode=dispatch-events --device_profiling_tracy
+iree-tracy-profile convert /tmp/run.tracyrec --output=/tmp/run.tracy
+iree-tracy-profile explain /tmp/run.tracy
+```
+
+The extra step is there because the event stream is not self-contained. The
+client refers to strings and source locations by pointer and sends the bytes
+behind them only when a server asks, so the recorder asks for each one as it
+appears and stores the answers alongside the events. That makes the recording
+complete, but it is still a recording rather than a `.tracy`; `convert` replays
+it into a real Tracy server offline and writes the trace. A converted recording
+is equivalent to a live capture of the same run - it reports the same zones,
+names, and source locations.
+
+This is useful where a second process is inconvenient or impossible: batch and
+CI runs, containers, embedded and remote targets with no profiler build, and
+anywhere the capture has to survive the machine it ran on. `TRACY_PORT` selects
+the loopback port as usual. Do not combine with `TRACY_NO_EXIT=1`: the client
+would wait for a second server after the recorder disconnected.
+
+Callstacks (`IREE_TRACING_MODE=3` and above) are the one thing a recording does
+not carry: symbolication is requested lazily by the profiler and is not
+performed during the run, so frames convert as `???`. Capture live for those.
+
 #### Reuse the HAL profiling timestamps
 
 Backends that implement HAL-native

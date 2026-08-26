@@ -16,6 +16,7 @@
 #include "GitRef.hpp"
 #include "TracyVersion.hpp"
 #include "commands.h"
+#include "convert.h"
 
 namespace iree_tracy_profile {
 namespace {
@@ -55,6 +56,7 @@ const char kUsage[] =
     "  iree-tracy-profile export --format=ireeperf-jsonl [--output=path|-]\n"
     "      <file.tracy>\n"
     "  iree-tracy-profile cat [--format=jsonl] <file.tracy>\n"
+    "  iree-tracy-profile convert --output=path <file.tracyrec>\n"
     "  iree-tracy-profile --agents_md\n"
     "\n"
     "Commands:\n"
@@ -81,6 +83,8 @@ const char kUsage[] =
     "  export       Decoded interchange export (ireeperf-jsonl) consumable\n"
     "               by iree-profile-render and other iree-profile tooling.\n"
     "  cat          Every event as a JSONL row, for archaeology/debugging.\n"
+    "  convert      Turn a recording captured in-process by\n"
+    "               IREE_TRACY_CAPTURE_FILE into a .tracy file.\n"
     "\n"
     "Important flags:\n"
     "  --format=FORMAT         text/jsonl for reports; ireeperf-jsonl for\n"
@@ -248,6 +252,18 @@ int main(int argc, char** argv) {
   if (options.events && options.format == Format::kText) {
     fprintf(stderr, "--*_events requires --format=jsonl\n");
     return 2;
+  }
+  if (command == "convert") {
+    if (options.output.empty() || options.output == "-") {
+      fprintf(stderr, "convert requires --output=<file.tracy>\n");
+      return 2;
+    }
+    std::string error;
+    if (!ConvertRecording(path, options.output, /*verbose=*/true, &error)) {
+      fprintf(stderr, "iree-tracy-profile: %s\n", error.c_str());
+      return 1;
+    }
+    return 0;
   }
   if (command == "export") {
     if (options.format != Format::kIreeperfJsonl) {

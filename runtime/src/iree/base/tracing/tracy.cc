@@ -5,6 +5,11 @@
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 
 #include "iree/base/tracing.h"
+#include "iree/base/tracing/tracy_recorder.h"
+
+#include <string.h>
+
+#include <string>
 
 // Textually include the Tracy implementation.
 // We do this here instead of relying on an external build target so that we can
@@ -91,6 +96,36 @@ static char* iree_tracing_tracy_source_file_callback(void* user_data,
   return content_copy;
 }
 
+//===----------------------------------------------------------------------===//
+// Single-process capture to file
+//===----------------------------------------------------------------------===//
+// Tracy's client only ever streams to a server, but the server does not have to
+// be the profiler. Setting IREE_TRACY_CAPTURE_FILE=<path> starts a recorder
+// thread inside this process that connects to the client over loopback, asks it
+// for every string and source location the event stream references, and writes
+// both to <path>. No profiler is spawned, launched, or needed.
+//
+// What comes out is a recording, not a .tracy file: turn it into one offline
+// with `iree-tracy-profile convert <path> -o run.tracy`.
+//
+// TRACY_PORT selects the port the client listens on, as usual. Do not combine
+// with TRACY_NO_EXIT=1: the client would wait for a second server after the
+// recorder disconnected.
+
+static const char* iree_tracing_capture_file_path() {
+  const char* path = getenv("IREE_TRACY_CAPTURE_FILE");
+  return (path && *path) ? path : nullptr;
+}
+
+static uint16_t iree_tracing_capture_port() {
+  const char* port_env = getenv("TRACY_PORT");
+  if (port_env && *port_env) {
+    const int port = atoi(port_env);
+    if (port > 0 && port < 65536) return (uint16_t)port;
+  }
+  return 8086;
+}
+
 void iree_tracing_tracy_initialize() {
 #ifdef TRACY_MANUAL_LIFETIME
   tracy::StartupProfiler();
@@ -100,9 +135,29 @@ void iree_tracing_tracy_initialize() {
   tracy::Profiler::SourceCallbackRegister(
       iree_tracing_tracy_source_file_callback,
       &iree_tracing_source_file_storage);
+  if (const char* path = iree_tracing_capture_file_path()) {
+    // Start before anything is traced: a client built without TRACY_ON_DEMAND
+    // queues everything since process start and hands it over on connect, and
+    // one built with it drops whatever happens while nothing is attached.
+    if (!iree_tracing_recorder_start(path, iree_tracing_capture_port())) {
+      fprintf(stderr,
+              "IREE_TRACY_CAPTURE_FILE: could not start the in-process "
+              "recorder; '%s' will not be written\n",
+              path);
+    }
+  }
 }
 
 void iree_tracing_tracy_deinitialize() {
+  if (iree_tracing_capture_file_path()) {
+    // Ask the client to drain and terminate, then let the recorder collect the
+    // tail of the stream and write the file.
+    tracy::GetProfiler().RequestShutdown();
+    iree_tracing_recorder_stop();
+    while (!tracy::GetProfiler().HasShutdownFinished()) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+  }
 #if defined(IREE_PLATFORM_APPLE)
   // Synchronously shut down the profiler service.
   // This is required on some platforms to support TRACY_NO_EXIT=1 such as
