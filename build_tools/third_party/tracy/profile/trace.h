@@ -43,6 +43,9 @@ const char* LaneName(Lane lane);
 struct GpuContextInfo {
   uint8_t id = 0;
   std::string name;
+  // Producer that announced the context, when it identified itself. Two drivers
+  // in one process can both call their first device "0".
+  std::string producer;
   Lane lane = Lane::kUnknown;
   std::optional<uint32_t> physical_device_ordinal;
   std::optional<uint32_t> queue_ordinal;

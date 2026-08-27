@@ -162,6 +162,18 @@ void iree_tracing_mutex_after_unlock(uint32_t lock_id);
 int64_t iree_tracing_time(void);
 int64_t iree_tracing_frequency(void);
 
+// Largest GPU context id the tracing provider can represent. Ids are 8-bit on
+// the wire and the server keys a fixed table by them.
+#define IREE_TRACING_GPU_CONTEXT_ID_MAX 254
+
+// Returned by iree_tracing_gpu_context_allocate when no context id is left.
+// Callers must not emit zones against it.
+#define IREE_TRACING_GPU_CONTEXT_ID_INVALID 255
+
+// Allocates a GPU context id and announces it to the provider. Returns
+// IREE_TRACING_GPU_CONTEXT_ID_INVALID when the process has exhausted the 255
+// available ids; zones emitted against a recycled id would make the server
+// re-announce a context it still holds open zones for.
 uint8_t iree_tracing_gpu_context_allocate(iree_tracing_gpu_context_type_t type,
                                           const char* name, size_t name_length,
                                           bool is_calibrated,

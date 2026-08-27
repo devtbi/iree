@@ -31,9 +31,18 @@ const char* LaneName(Lane lane) {
 }
 
 // Decodes the IREE HAL profile sink context naming convention:
-//   "dev<N>/q<M> <lane>" or "dev<N> <lane>".
+//   "dev<N>/q<M> <lane>" or "dev<N> <lane>", either optionally followed by
+//   " [<producer>]".
 static void DecodeContextName(GpuContextInfo* info) {
-  const std::string& name = info->name;
+  std::string name = info->name;
+  // Split off the producer suffix before parsing the lane.
+  if (!name.empty() && name.back() == ']') {
+    const size_t open = name.rfind(" [");
+    if (open != std::string::npos) {
+      info->producer = name.substr(open + 2, name.size() - open - 3);
+      name.resize(open);
+    }
+  }
   if (name.rfind("dev", 0) != 0) {
     // Stream tracing contexts are named after the device identifier.
     info->lane = Lane::kStream;

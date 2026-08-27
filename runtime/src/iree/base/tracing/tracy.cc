@@ -433,6 +433,23 @@ void iree_tracing_mutex_after_unlock(uint32_t lock_id) {
 
 int64_t iree_tracing_time(void) { return tracy::Profiler::GetTime(); }
 
+// Thread handle each GPU context was announced on.
+//
+// Tracy buckets GPU zones into a per-thread timeline inside each context and
+// looks the end item's thread up directly, so a zone's end must name the same
+// thread as its begin. Attributing zones to whichever thread happens to be
+// submitting would also scatter one queue's timeline across a row per producer
+// thread, so zones are attributed to the context's owner instead.
+static std::atomic<uint32_t>
+    iree_tracing_gpu_context_threads[IREE_TRACING_GPU_CONTEXT_ID_MAX + 1];
+
+static uint32_t iree_tracing_gpu_context_thread(uint8_t context_id) {
+  const uint32_t thread_id =
+      iree_tracing_gpu_context_threads[context_id].load(
+          std::memory_order_relaxed);
+  return thread_id != 0 ? thread_id : tracy::GetThreadHandle();
+}
+
 int64_t iree_tracing_frequency(void) { return tracy::GetFrequencyQpc(); }
 
 uint8_t iree_tracing_gpu_context_allocate(iree_tracing_gpu_context_type_t type,
@@ -441,14 +458,18 @@ uint8_t iree_tracing_gpu_context_allocate(iree_tracing_gpu_context_type_t type,
                                           uint64_t cpu_timestamp,
                                           uint64_t gpu_timestamp,
                                           float timestamp_period) {
-  // Allocate the process-unique GPU context ID. There's a max of 255 available;
-  // if we are recreating devices a lot we may exceed that. Don't do that, or
-  // wrap around and get weird (but probably still usable) numbers.
-  uint8_t context_id =
-      tracy::GetGpuCtxCounter().fetch_add(1, std::memory_order_relaxed);
-  if (context_id >= 255) {
-    context_id %= 255;
+  // Allocate the process-unique GPU context ID. Ids are 8-bit and the server
+  // keys a fixed table by them, so reusing one that is already live makes it
+  // re-announce a context it is still holding zones for: it asserts, or with
+  // asserts compiled out orphans the old context and strands every zone still
+  // open on it. Report exhaustion instead and let the caller decide.
+  const int32_t next_context_id = tracy::NextGpuContextId();
+  if (next_context_id < 0 || next_context_id > IREE_TRACING_GPU_CONTEXT_ID_MAX) {
+    return IREE_TRACING_GPU_CONTEXT_ID_INVALID;
   }
+  const uint8_t context_id = (uint8_t)next_context_id;
+  iree_tracing_gpu_context_threads[context_id].store(tracy::GetThreadHandle(),
+                                                     std::memory_order_relaxed);
 
   tracy::GpuContextFlags context_flags = (tracy::GpuContextFlags)0;
   if (is_calibrated) {
@@ -516,7 +537,8 @@ void iree_tracing_gpu_zone_begin(uint8_t context_id, uint16_t query_id,
   tracy::MemWrite(&item->hdr.type, tracy::QueueType::GpuZoneBeginSerial);
   tracy::MemWrite(&item->gpuZoneBegin.cpuTime, tracy::Profiler::GetTime());
   tracy::MemWrite(&item->gpuZoneBegin.srcloc, (uint64_t)src_loc);
-  tracy::MemWrite(&item->gpuZoneBegin.thread, tracy::GetThreadHandle());
+  tracy::MemWrite(&item->gpuZoneBegin.thread,
+                  iree_tracing_gpu_context_thread(context_id));
   tracy::MemWrite(&item->gpuZoneBegin.queryId, query_id);
   tracy::MemWrite(&item->gpuZoneBegin.context, context_id);
   tracy::Profiler::QueueSerialFinish();
@@ -540,7 +562,8 @@ void iree_tracing_gpu_zone_begin_external(
                   tracy::QueueType::GpuZoneBeginAllocSrcLocSerial);
   tracy::MemWrite(&item->gpuZoneBegin.cpuTime, tracy::Profiler::GetTime());
   tracy::MemWrite(&item->gpuZoneBegin.srcloc, (uint64_t)src_loc);
-  tracy::MemWrite(&item->gpuZoneBegin.thread, tracy::GetThreadHandle());
+  tracy::MemWrite(&item->gpuZoneBegin.thread,
+                  iree_tracing_gpu_context_thread(context_id));
   tracy::MemWrite(&item->gpuZoneBegin.queryId, query_id);
   tracy::MemWrite(&item->gpuZoneBegin.context, context_id);
   tracy::Profiler::QueueSerialFinish();
@@ -550,7 +573,8 @@ void iree_tracing_gpu_zone_end(uint8_t context_id, uint16_t query_id) {
   auto* item = tracy::Profiler::QueueSerial();
   tracy::MemWrite(&item->hdr.type, tracy::QueueType::GpuZoneEndSerial);
   tracy::MemWrite(&item->gpuZoneEnd.cpuTime, tracy::Profiler::GetTime());
-  tracy::MemWrite(&item->gpuZoneEnd.thread, tracy::GetThreadHandle());
+  tracy::MemWrite(&item->gpuZoneEnd.thread,
+                  iree_tracing_gpu_context_thread(context_id));
   tracy::MemWrite(&item->gpuZoneEnd.queryId, query_id);
   tracy::MemWrite(&item->gpuZoneEnd.context, context_id);
   tracy::Profiler::QueueSerialFinish();
