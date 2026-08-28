@@ -11,6 +11,7 @@
 
 #include "iree/base/attributes.h"
 #include "iree/base/config.h"
+#include "iree/base/internal/atomics.h"
 
 #ifndef IREE_BASE_TRACING_TRACY_H_
 #define IREE_BASE_TRACING_TRACY_H_
@@ -111,19 +112,43 @@ extern "C" {
 
 #if IREE_TRACING_FEATURES
 
-#if defined(TRACY_ON_DEMAND)
-// With on-demand profiling zones are only recorded while a profiler is
-// connected: iree_tracing_zone_begin_impl returns 0 when disconnected and the
-// zone id carries the connection generation so that ends emitted after a
-// reconnect are dropped, matching the behavior of tracy's own C zone API.
+// Builds the tracy zone context for a zone id.
+//
+// A zone that was not recorded gets id 0, and the context it produces is
+// inactive so that the matching end - and any text/value/color appended to it -
+// does nothing. This is what makes it safe to drop a zone at runtime: tracy's
+// server treats a ZoneEnd with no open zone as a capture-ending failure, so the
+// decision has to ride in the id rather than being taken again at the end.
+// Under on-demand profiling the id additionally carries the connection
+// generation, so ends left over from a previous connection are dropped too.
 TracyCZoneCtx iree_tracing_make_zone_ctx(iree_zone_id_t zone_id);
-#else
-#ifdef __cplusplus
-#define iree_tracing_make_zone_ctx(zone_id) TracyCZoneCtx{zone_id, 1}
-#else
-#define iree_tracing_make_zone_ctx(zone_id) (TracyCZoneCtx){zone_id, 1}
-#endif  // __cplusplus
-#endif  // TRACY_ON_DEMAND
+
+// Whether host zones are currently being recorded.
+//
+// Read at every zone begin, so it is exposed here rather than behind a call:
+// the point of switching zones off is to stop paying for them, and most of what
+// a zone costs on a small core is the two clock reads that happen inside the
+// implementation. Never write this directly - use
+// iree_tracing_set_instrumentation_enabled, which knows what may be changed
+// while a capture is running.
+extern iree_atomic_int32_t iree_tracing_instrumentation_enabled;
+
+#define IREE_TRACING_INSTRUMENTATION_ENABLED()                    \
+  (iree_atomic_load(&iree_tracing_instrumentation_enabled,        \
+                    iree_memory_order_relaxed) != 0)
+
+// Enables or disables recording of host zones for the whole process.
+//
+// Zones already open keep their ids and still close correctly, and zones begun
+// while disabled are never opened, so this is safe to call at any time and from
+// any thread. Device zones (iree_tracing_gpu_*) and the HAL profile sink are
+// not affected: they are a separate stream keyed by context and query id.
+//
+// Allocation tracking is deliberately NOT covered. A free whose allocation was
+// never recorded is a capture-ending failure in tracy, and allocation lifetimes
+// are unbounded, so that has to be chosen before the process starts allocating
+// rather than toggled underneath live allocations.
+void iree_tracing_set_instrumentation_enabled(bool enabled);
 
 void iree_tracing_tracy_initialize();
 void iree_tracing_tracy_deinitialize();
@@ -239,22 +264,32 @@ void* iree_tracing_obscure_ptr(void* ptr);
   static const iree_tracing_location_t TracyConcat(                           \
       __tracy_source_location, __LINE__) = {name_literal, __FUNCTION__,       \
                                             __FILE__, (uint32_t)__LINE__, 0}; \
-  iree_zone_id_t zone_id = iree_tracing_zone_begin_impl(                      \
-      &TracyConcat(__tracy_source_location, __LINE__), NULL, 0);
+  iree_zone_id_t zone_id =                                                    \
+      IREE_TRACING_INSTRUMENTATION_ENABLED()                                  \
+          ? iree_tracing_zone_begin_impl(                                     \
+                &TracyConcat(__tracy_source_location, __LINE__), NULL, 0)     \
+          : 0;
 
 #define IREE_TRACE_ZONE_BEGIN_NAMED_DYNAMIC(zone_id, name, name_length) \
   static const iree_tracing_location_t TracyConcat(                     \
       __tracy_source_location, __LINE__) = {0, __FUNCTION__, __FILE__,  \
                                             (uint32_t)__LINE__, 0};     \
-  iree_zone_id_t zone_id = iree_tracing_zone_begin_impl(                \
-      &TracyConcat(__tracy_source_location, __LINE__), (name), (name_length));
+  iree_zone_id_t zone_id =                                              \
+      IREE_TRACING_INSTRUMENTATION_ENABLED()                            \
+          ? iree_tracing_zone_begin_impl(                               \
+                &TracyConcat(__tracy_source_location, __LINE__), (name), \
+                (name_length))                                          \
+          : 0;
 
 #define IREE_TRACE_ZONE_BEGIN_EXTERNAL(                                       \
     zone_id, file_name, file_name_length, line, function_name,                \
     function_name_length, name, name_length)                                  \
-  iree_zone_id_t zone_id = iree_tracing_zone_begin_external_impl(             \
-      file_name, file_name_length, line, function_name, function_name_length, \
-      name, name_length)
+  iree_zone_id_t zone_id =                                                    \
+      IREE_TRACING_INSTRUMENTATION_ENABLED()                                  \
+          ? iree_tracing_zone_begin_external_impl(                            \
+                file_name, file_name_length, line, function_name,             \
+                function_name_length, name, name_length)                      \
+          : 0
 
 #define IREE_TRACE_ZONE_END(zone_id) iree_tracing_zone_end(zone_id)
 
@@ -531,8 +566,16 @@ static inline void iree_tracing_context_plot_value_i64(
 #endif
 
 #if IREE_TRACING_FEATURES & IREE_TRACING_FEATURE_INSTRUMENTATION
-#define IREE_TRACE_SCOPE() ZoneScoped
-#define IREE_TRACE_SCOPE_NAMED(name_literal) ZoneScopedN(name_literal)
+// tracy's scoped zones take their own runtime predicate and gate both the
+// constructor and the destructor on it, so they follow the same switch without
+// any of the id bookkeeping the C zones need.
+#define IREE_TRACE_SCOPE()                                            \
+  SuppressVarShadowWarning(                                           \
+      ZoneNamed(___tracy_scoped_zone, IREE_TRACING_INSTRUMENTATION_ENABLED()))
+#define IREE_TRACE_SCOPE_NAMED(name_literal)                     \
+  SuppressVarShadowWarning(                                      \
+      ZoneNamedN(___tracy_scoped_zone, name_literal,             \
+                 IREE_TRACING_INSTRUMENTATION_ENABLED()))
 #define IREE_TRACE_SCOPE_ID ___tracy_scoped_zone
 #endif  // IREE_TRACING_FEATURE_INSTRUMENTATION
 

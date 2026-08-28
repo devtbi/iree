@@ -135,6 +135,16 @@ void iree_tracing_tracy_initialize() {
   tracy::Profiler::SourceCallbackRegister(
       iree_tracing_tracy_source_file_callback,
       &iree_tracing_source_file_storage);
+  // Host zones can be switched off for the whole run without a separate build.
+  // Device zones and the HAL profile sink are unaffected: on a small core the
+  // ~100 host zones IREE emits around each dispatch cost far more than the
+  // dispatch timing they surround.
+  if (const char* instrumentation = getenv("IREE_TRACING_INSTRUMENTATION")) {
+    if (instrumentation[0] == '0' && instrumentation[1] == '\0') {
+      iree_tracing_set_instrumentation_enabled(false);
+    }
+  }
+
   if (const char* path = iree_tracing_capture_file_path()) {
     // Start before anything is traced: a client built without TRACY_ON_DEMAND
     // queues everything since process start and hands it over on connect, and
@@ -213,16 +223,39 @@ void iree_tracing_publish_source_file(const void* filename,
   storage->mutex.unlock();
 }
 
-#if defined(TRACY_ON_DEMAND)
-
-// Zone ids are only used by tracy to pair begin/end validation events so we
-// are free to choose them: the low bits come from tracy's counter and the top
-// byte is the connection generation the zone was opened under.
-#define IREE_TRACING_ZONE_ID_CONNECTION_SHIFT 24
+// Zone ids are only used by tracy to pair begin/end validation events so we are
+// free to choose them: the low bits come from tracy's counter and the top byte
+// is the generation the zone was opened under. Id 0 means "this zone was not
+// recorded", so a zone that is recorded never gets it.
+#define IREE_TRACING_ZONE_ID_GENERATION_SHIFT 24
 #define IREE_TRACING_ZONE_ID_COUNTER_MASK 0x00FFFFFFu
 
+iree_atomic_int32_t iree_tracing_instrumentation_enabled =
+    IREE_ATOMIC_VAR_INIT(1);
+
+void iree_tracing_set_instrumentation_enabled(bool enabled) {
+  iree_atomic_store(&iree_tracing_instrumentation_enabled, enabled ? 1 : 0,
+                    iree_memory_order_relaxed);
+}
+
+// Generation the zone ids being handed out belong to.
+//
+// Under on-demand profiling this is the connection: a reconnect makes the
+// server forget every zone that was open, so ends left over from the previous
+// connection have to be dropped. Otherwise there is only one generation and the
+// id carries nothing but the counter.
+static uint32_t iree_tracing_zone_generation(void) {
+#if defined(TRACY_ON_DEMAND)
+  return (uint32_t)(tracy::GetProfiler().ConnectionId() & 0xFFu);
+#else
+  return 0;
+#endif  // TRACY_ON_DEMAND
+}
+
 static iree_zone_id_t iree_tracing_allocate_zone_id() {
+#if defined(TRACY_ON_DEMAND)
   if (!tracy::GetProfiler().IsConnected()) return 0;
+#endif  // TRACY_ON_DEMAND
   uint32_t counter =
       tracy::GetProfiler().GetNextZoneId() & IREE_TRACING_ZONE_ID_COUNTER_MASK;
   if (counter == 0) {
@@ -230,38 +263,31 @@ static iree_zone_id_t iree_tracing_allocate_zone_id() {
               IREE_TRACING_ZONE_ID_COUNTER_MASK;
     if (counter == 0) counter = 1;
   }
-  const uint32_t connection_id =
-      (uint32_t)(tracy::GetProfiler().ConnectionId() & 0xFFu);
-  return counter | (connection_id << IREE_TRACING_ZONE_ID_CONNECTION_SHIFT);
+  return counter | (iree_tracing_zone_generation()
+                    << IREE_TRACING_ZONE_ID_GENERATION_SHIFT);
 }
 
 TracyCZoneCtx iree_tracing_make_zone_ctx(iree_zone_id_t zone_id) {
   TracyCZoneCtx ctx;
   ctx.id = zone_id;
+#if defined(TRACY_ON_DEMAND)
   ctx.connectionId = tracy::GetProfiler().ConnectionId();
-  // A zone begun while disconnected or under a previous connection has no
-  // matching begin on the server; drop it.
-  ctx.active =
-      zone_id != 0 && (zone_id >> IREE_TRACING_ZONE_ID_CONNECTION_SHIFT) ==
-                          (uint32_t)(ctx.connectionId & 0xFFu);
+#endif  // TRACY_ON_DEMAND
+  // A zone that was never recorded - switched off at runtime, or begun while
+  // disconnected or under a previous connection - has no matching begin on the
+  // server. Emitting its end would be an unmatched ZoneEnd, which tracy treats
+  // as a capture-ending failure, so the context is inactive and every operation
+  // derived from it becomes a no-op.
+  ctx.active = zone_id != 0 && (zone_id >> IREE_TRACING_ZONE_ID_GENERATION_SHIFT) ==
+                                   iree_tracing_zone_generation();
   return ctx;
 }
-
-#else
-
-static iree_zone_id_t iree_tracing_allocate_zone_id() {
-  return tracy::GetProfiler().GetNextZoneId();
-}
-
-#endif  // TRACY_ON_DEMAND
 
 iree_zone_id_t iree_tracing_zone_begin_impl(
     const iree_tracing_location_t* src_loc, const char* name,
     size_t name_length) {
   const iree_zone_id_t zone_id = iree_tracing_allocate_zone_id();
-#if defined(TRACY_ON_DEMAND)
   if (zone_id == 0) return 0;
-#endif  // TRACY_ON_DEMAND
 
 #ifndef TRACY_NO_VERIFY
   {
@@ -313,9 +339,7 @@ iree_zone_id_t iree_tracing_zone_begin_external_impl(
     const char* function_name, size_t function_name_length, const char* name,
     size_t name_length) {
   const iree_zone_id_t zone_id = iree_tracing_allocate_zone_id();
-#if defined(TRACY_ON_DEMAND)
   if (zone_id == 0) return 0;
-#endif  // TRACY_ON_DEMAND
 
   uint64_t src_loc = tracy::Profiler::AllocSourceLocation(
       line, file_name, file_name_length, function_name, function_name_length,
