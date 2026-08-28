@@ -1,0 +1,39 @@
+diff --git a/public/client/TracyProfiler.hpp b/public/client/TracyProfiler.hpp
+index 2a564afc..33eaaa59 100644
+--- a/public/client/TracyProfiler.hpp
++++ b/public/client/TracyProfiler.hpp
+@@ -40,7 +40,15 @@
+ #  define TRACY_HAS_RDTSC
+ #elif defined _WIN32 && defined _M_ARM64
+ #  define TRACY_HAS_CNTVCT
+-#elif defined __APPLE__ && defined __MACH__ && TARGET_CPU_ARM64 // For now only supported on Apple devices
++#elif defined __APPLE__ && defined __MACH__ && TARGET_CPU_ARM64
++#  define TRACY_HAS_CNTVCT
++#elif defined __linux__ && defined __aarch64__
++// The generic timer is architecturally required to be system-wide and
++// monotonic, and the arm64 vDSO already reads CNTVCT_EL0 to service
++// clock_gettime, so reading it directly is the same clock without the call.
++// It is coarser than clock_gettime - CNTFRQ_EL0 is commonly 19.2-100MHz, i.e.
++// 10-52ns per tick - so define TRACY_DISALLOW_HW_TIMER to keep nanosecond
++// resolution at the cost of a vDSO call per timestamp.
+ #  define TRACY_HAS_CNTVCT
+ #endif
+ 
+@@ -287,6 +295,17 @@ public:
+             );
+             return value;
+         }
++#  elif defined __linux__ && defined __aarch64__
++        {
++            uint64_t value;
++            __asm__ __volatile__(
++                "mrs %0, CNTVCT_EL0"
++                : "=r" (value)          // Output: write 'register %0' to 'value'
++                :                       // No inputs
++                : "memory"              // Clobber list: memory (e.g., compiler barrier)
++            );
++            return int64_t( value );
++        }
+ #  elif defined _WIN32
+ #    ifdef TRACY_TIMER_QPC
+         return GetTimeQpc();
