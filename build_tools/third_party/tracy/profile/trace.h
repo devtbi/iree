@@ -52,6 +52,17 @@ struct GpuContextInfo {
   const tracy::GpuCtxData* data = nullptr;
 };
 
+// A section: a named span on a category track carrying free-form text. Unlike a
+// zone it is not tied to a thread or a call stack, and unlike a GPU zone it can
+// carry per-instance text.
+struct SectionRef {
+  uint16_t category = 0;
+  std::string category_name;
+  std::string text;
+  int64_t start_ns = 0;
+  int64_t end_ns = 0;
+};
+
 struct CpuZoneRef {
   const tracy::ZoneEvent* zone = nullptr;
   uint64_t thread_id = 0;
@@ -89,6 +100,8 @@ class Trace {
   const std::vector<GpuContextInfo>& gpu_contexts() const {
     return gpu_contexts_;
   }
+  // Sections in start order.
+  const std::vector<SectionRef>& sections() const { return sections_; }
   const GpuContextInfo* FindGpuContext(uint8_t id) const;
 
   // Naming helpers.
@@ -125,6 +138,7 @@ class Trace {
   std::vector<CpuZoneRef> cpu_zones_;
   std::vector<GpuZoneRef> gpu_zones_;
   std::vector<GpuContextInfo> gpu_contexts_;
+  std::vector<SectionRef> sections_;
 };
 
 // Matches |value| against |pattern| with '*' (any run) and '?' (any char),

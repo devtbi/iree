@@ -55,6 +55,8 @@ const char kUsage[] =
     "<file.tracy>\n"
     "  iree-tracy-profile export --format=ireeperf-jsonl [--output=path|-]\n"
     "      <file.tracy>\n"
+    "  iree-tracy-profile section [--format=text|jsonl] [--filter=glob]\n"
+    "      <file.tracy>\n"
     "  iree-tracy-profile cat [--format=jsonl] <file.tracy>\n"
     "  iree-tracy-profile convert --output=path <file.tracyrec>\n"
     "  iree-tracy-profile --agents_md\n"
@@ -74,6 +76,8 @@ const char kUsage[] =
     "               self time, or individual events with --zone_events.\n"
     "  thread       Threads with zone/message/sample counts and busy time.\n"
     "  message      Messages with severity, thread, and time.\n"
+    "  section      Named spans on category tracks with their per-instance\n"
+    "               text; survives host zones being switched off.\n"
     "  plot         Plot series summaries, or samples with --plot_samples.\n"
     "  memory       Allocation pools with high-water and live-at-end\n"
     "               summaries, or events with --memory_events.\n"
@@ -306,6 +310,8 @@ int main(int argc, char** argv) {
     rc = RunZone(*trace, options, out);
   } else if (command == "thread") {
     rc = RunThread(*trace, options, out);
+  } else if (command == "section") {
+    rc = RunSection(*trace, options, out);
   } else if (command == "message") {
     rc = RunMessage(*trace, options, out);
   } else if (command == "plot") {

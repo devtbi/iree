@@ -1004,6 +1004,46 @@ int RunMessage(Trace& trace, const Options& options, FILE* out) {
 }
 
 //===----------------------------------------------------------------------===//
+// section
+//===----------------------------------------------------------------------===//
+
+int RunSection(Trace& trace, const Options& options, FILE* out) {
+  // Group by category so the text of one track can be compared across the run,
+  // but keep every instance: the text is per-instance and is the whole point.
+  const std::vector<SectionRef>& sections = trace.sections();
+  uint64_t matched = 0;
+  for (const SectionRef& section : sections) {
+    if (!MatchPattern(section.text, options.filter) &&
+        !MatchPattern(section.category_name, options.filter)) {
+      continue;
+    }
+    ++matched;
+    const int64_t duration_ns = section.end_ns - section.start_ns;
+    if (options.format == Format::kJsonl) {
+      JsonRow row("section");
+      row.UInt("category", section.category);
+      row.Str("category_name", section.category_name);
+      row.Str("text", section.text);
+      row.Int("start_ns", section.start_ns);
+      row.Int("since_start_ns", trace.TimeSinceStart(section.start_ns));
+      row.Int("end_ns", section.end_ns);
+      row.Int("duration_ns", duration_ns);
+      row.Write(out);
+    } else {
+      fprintf(out, "%14s %12s  [%u%s%s] %s\n",
+              FormatNs(trace.TimeSinceStart(section.start_ns)).c_str(),
+              FormatNs(duration_ns).c_str(), section.category,
+              section.category_name.empty() ? "" : " ",
+              section.category_name.c_str(), section.text.c_str());
+    }
+  }
+  if (options.format == Format::kText) {
+    fprintf(out, "sections (%llu)\n", (unsigned long long)matched);
+  }
+  return 0;
+}
+
+//===----------------------------------------------------------------------===//
 // plot
 //===----------------------------------------------------------------------===//
 

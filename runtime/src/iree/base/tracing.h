@@ -285,6 +285,9 @@ enum {
 // Demarcates an advancement of the top-level unnamed frame group.
 #define IREE_TRACE_FRAME_MARK()
 // Demarcates an advancement of a named frame group.
+#define IREE_TRACE_SECTION_BEGIN(section_id, category, text, text_length)
+#define IREE_TRACE_SECTION_END(section_id)
+#define IREE_TRACE_SECTION_CONFIGURE(category, name, name_length)
 #define IREE_TRACE_FRAME_MARK_NAMED(name_literal)
 // Begins a discontinuous frame in a named frame group.
 // Must be properly matched with a IREE_TRACE_FRAME_MARK_NAMED_END.

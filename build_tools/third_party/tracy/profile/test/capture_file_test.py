@@ -25,8 +25,60 @@ import sys
 import tempfile
 
 
+def check_sections(benchmark_module, profile_tool, tmp):
+    """Sections must survive host instrumentation being switched off.
+
+    They are the structure a zone cannot carry - which iteration this was - and
+    the reason to keep them is that they still arrive when the host zones that
+    would have told you are gone.
+    """
+    recording = os.path.join(tmp, "bench.tracyrec")
+    trace = os.path.join(tmp, "bench.tracy")
+    env = dict(os.environ)
+    env["IREE_TRACY_CAPTURE_FILE"] = recording
+    env["IREE_TRACING_INSTRUMENTATION"] = "0"
+    env.pop("TRACY_NO_EXIT", None)
+    env.setdefault("TRACY_PORT", "8196")
+    result = subprocess.run(
+        [benchmark_module, "--device=local-sync", "--module=/nonexistent.vmfb",
+         "--function=main", "--benchmark_min_time=0.01s"],
+        env=env, capture_output=True, text=True, timeout=300,
+    )
+    # The module is missing so the benchmark fails; the tracing lifecycle still
+    # runs, which is all this needs.
+    if not os.path.exists(recording):
+        print("  (no recording produced; skipping section check)")
+        return
+    convert = subprocess.run(
+        [profile_tool, "convert", recording, f"--output={trace}"],
+        capture_output=True, text=True, timeout=300,
+    )
+    if convert.returncode != 0 or not os.path.exists(trace):
+        print("  (conversion failed; skipping section check)")
+        return
+    listing = subprocess.run(
+        [profile_tool, "section", "--format=jsonl", trace],
+        capture_output=True, text=True, check=True, timeout=120,
+    ).stdout
+    rows = [json.loads(line) for line in listing.splitlines() if line.strip()]
+    sections = [row for row in rows if row["type"] == "section"]
+    zones = subprocess.run(
+        [profile_tool, "summary", "--format=jsonl", trace],
+        capture_output=True, text=True, check=True, timeout=120,
+    ).stdout
+    summary = [json.loads(l) for l in zones.splitlines() if l.strip()]
+    [head] = [row for row in summary if row["type"] == "summary"]
+    assert head["cpu_zone_count"] == 0, (
+        f"host zones were switched off but {head['cpu_zone_count']} arrived")
+    for section in sections:
+        assert section["end_ns"] >= section["start_ns"], section
+        assert section["text"], section
+    print(f"  sections readable with instrumentation off: {len(sections)}")
+
+
 def main():
     run_module, profile_tool = sys.argv[1:3]
+    benchmark_module = sys.argv[3] if len(sys.argv) > 3 else None
     with tempfile.TemporaryDirectory() as tmp:
         recording = os.path.join(tmp, "run.tracyrec")
         trace = os.path.join(tmp, "run.tracy")
@@ -86,6 +138,8 @@ def main():
             f"capture file test passed ({head['cpu_zone_count']} zones, "
             f"{len(names)} named zone groups)"
         )
+        if benchmark_module:
+            check_sections(benchmark_module, profile_tool, tmp)
 
 
 if __name__ == "__main__":

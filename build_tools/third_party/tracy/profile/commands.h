@@ -43,6 +43,11 @@ int RunQueue(Trace& trace, const Options& options, FILE* out);
 int RunZone(Trace& trace, const Options& options, FILE* out);
 int RunThread(Trace& trace, const Options& options, FILE* out);
 int RunMessage(Trace& trace, const Options& options, FILE* out);
+
+// Sections: named spans on category tracks carrying free-form text. Used for
+// structure a zone cannot express - which iteration this was, which submission
+// a span belongs to - and readable even when host zones are switched off.
+int RunSection(Trace& trace, const Options& options, FILE* out);
 int RunPlot(Trace& trace, const Options& options, FILE* out);
 int RunMemory(Trace& trace, const Options& options, FILE* out);
 int RunFrame(Trace& trace, const Options& options, FILE* out);

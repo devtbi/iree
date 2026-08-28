@@ -169,6 +169,17 @@ static iree_hal_profiling_from_flags_t* g_profiling = nullptr;
 namespace iree {
 namespace {
 
+// Tracy section category used to mark benchmark iterations.
+//
+// The BenchmarkIteration zones record that an iteration happened but not which
+// one, and they stop being emitted when host instrumentation is switched off at
+// runtime. A section carries the index as text, survives that switch, is
+// readable from `iree-tracy-profile section`, and can be used in the profiler
+// to limit the view to a single iteration - which is what is wanted when one
+// iteration is the slow one.
+enum { IREE_BENCHMARK_SECTION_CATEGORY_ITERATION = 1 };
+
+
 static const char kIreeBenchmarkModuleUsage[] =
     "Benchmarks exported functions from a compiled IREE module.\n"
     "\n"
@@ -255,8 +266,18 @@ static void BenchmarkGenericFunction(
                                       iree_allocator_system(), &local_outputs));
   }
   // Benchmarking loop.
+  IREE_TRACE_SECTION_CONFIGURE(IREE_BENCHMARK_SECTION_CATEGORY_ITERATION,
+                               "benchmark", strlen("benchmark"));
+  IREE_TRACE(int64_t iteration_index = 0);
   while (state.KeepRunningBatch(batch_size)) {
     IREE_TRACE_ZONE_BEGIN_NAMED(z1, "BenchmarkIteration");
+    IREE_TRACE(char iteration_text[32]);
+    IREE_TRACE(int iteration_text_length =
+                   snprintf(iteration_text, sizeof(iteration_text),
+                            "iteration %" PRId64, (int64_t)iteration_index++));
+    IREE_TRACE_SECTION_BEGIN(
+        s1, IREE_BENCHMARK_SECTION_CATEGORY_ITERATION, iteration_text,
+        iteration_text_length > 0 ? (size_t)iteration_text_length : 0);
     IREE_TRACE_FRAME_MARK_NAMED("Iteration");
     BeginReplayExecuteScope(recorder);
     // Clear the output list at the beginning of loop, so we can keep the
@@ -266,6 +287,7 @@ static void BenchmarkGenericFunction(
         context, function, IREE_VM_INVOCATION_FLAG_NONE, /*policy=*/nullptr,
         inputs, local_outputs.get(), iree_allocator_system()));
     EndReplayExecuteScope(recorder);
+    IREE_TRACE_SECTION_END(s1);
     IREE_TRACE_ZONE_END(z1);
     if (device) {
       state.PauseTiming();
@@ -336,9 +358,19 @@ static void BenchmarkAsyncFunction(
   batch_size = (int32_t)iree_host_align(batch_size, batch_concurrency);
 
   // Benchmarking loop.
+  IREE_TRACE_SECTION_CONFIGURE(IREE_BENCHMARK_SECTION_CATEGORY_ITERATION,
+                               "benchmark", strlen("benchmark"));
+  IREE_TRACE(int64_t iteration_index = 0);
   while (state.KeepRunningBatch(batch_size)) {
     state.PauseTiming();
     IREE_TRACE_ZONE_BEGIN_NAMED(z1, "BenchmarkIteration");
+    IREE_TRACE(char iteration_text[32]);
+    IREE_TRACE(int iteration_text_length =
+                   snprintf(iteration_text, sizeof(iteration_text),
+                            "iteration %" PRId64, (int64_t)iteration_index++));
+    IREE_TRACE_SECTION_BEGIN(
+        s1, IREE_BENCHMARK_SECTION_CATEGORY_ITERATION, iteration_text,
+        iteration_text_length > 0 ? (size_t)iteration_text_length : 0);
     IREE_TRACE_FRAME_MARK_NAMED("Iteration");
 
     IREE_TRACE_ZONE_BEGIN_NAMED(z_begin, "PrepareBatch");
@@ -433,6 +465,7 @@ static void BenchmarkAsyncFunction(
     timeline_semaphores.clear();
     IREE_TRACE_ZONE_END(z_end);
 
+    IREE_TRACE_SECTION_END(s1);
     IREE_TRACE_ZONE_END(z1);
     if (device) {
       IREE_CHECK_OK(iree_hal_flush_profiling_from_flags(g_profiling));
@@ -491,8 +524,18 @@ static void BenchmarkDispatchFunction(const std::string& benchmark_name,
                                     iree_allocator_system(), &outputs));
 
   // Benchmarking loop.
+  IREE_TRACE_SECTION_CONFIGURE(IREE_BENCHMARK_SECTION_CATEGORY_ITERATION,
+                               "benchmark", strlen("benchmark"));
+  IREE_TRACE(int64_t iteration_index = 0);
   while (state.KeepRunningBatch(FLAG_batch_size)) {
     IREE_TRACE_ZONE_BEGIN_NAMED(z1, "BenchmarkIteration");
+    IREE_TRACE(char iteration_text[32]);
+    IREE_TRACE(int iteration_text_length =
+                   snprintf(iteration_text, sizeof(iteration_text),
+                            "iteration %" PRId64, (int64_t)iteration_index++));
+    IREE_TRACE_SECTION_BEGIN(
+        s1, IREE_BENCHMARK_SECTION_CATEGORY_ITERATION, iteration_text,
+        iteration_text_length > 0 ? (size_t)iteration_text_length : 0);
     IREE_TRACE_FRAME_MARK_NAMED("Iteration");
     BeginReplayExecuteScope(recorder);
     IREE_CHECK_OK(iree_vm_invoke(
@@ -500,6 +543,7 @@ static void BenchmarkDispatchFunction(const std::string& benchmark_name,
         inputs.get(), outputs.get(), iree_allocator_system()));
     IREE_CHECK_OK(iree_vm_list_resize(outputs.get(), 0));
     EndReplayExecuteScope(recorder);
+    IREE_TRACE_SECTION_END(s1);
     IREE_TRACE_ZONE_END(z1);
   }
   state.SetItemsProcessed(state.iterations());

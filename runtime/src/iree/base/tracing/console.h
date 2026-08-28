@@ -219,6 +219,9 @@ void iree_tracing_memory_free(const char* name, size_t name_length, void* ptr);
 // TODO(benvanik): console tracing frame support. We could use these to bound
 // statistics or update progress indicators or something.
 #define IREE_TRACE_FRAME_MARK()
+#define IREE_TRACE_SECTION_BEGIN(section_id, category, text, text_length)
+#define IREE_TRACE_SECTION_END(section_id)
+#define IREE_TRACE_SECTION_CONFIGURE(category, name, name_length)
 #define IREE_TRACE_FRAME_MARK_NAMED(name_literal)
 #define IREE_TRACE_FRAME_MARK_BEGIN_NAMED(name_literal)
 #define IREE_TRACE_FRAME_MARK_END_NAMED(name_literal)

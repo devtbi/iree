@@ -125,6 +125,34 @@ void Trace::Index() {
     IndexCpuZones(td->timeline, td->id, 0);
   }
 
+  const auto& section_descriptions = worker_->GetSectionDescriptions();
+  for (const auto& entry : worker_->GetSections()) {
+    std::string category_name;
+    auto description = section_descriptions.find(entry.first);
+    if (description != section_descriptions.end() &&
+        description->second.Active()) {
+      category_name = worker_->GetString(description->second);
+    }
+    for (const auto& item : entry.second) {
+      SectionRef ref;
+      ref.category = entry.first;
+      ref.category_name = category_name;
+      ref.text = item.text.Active() ? worker_->GetString(item.text) : "";
+      ref.start_ns = item.start.Val();
+      // A section whose leave never arrived is stored with a negative end
+      // holding the id it is still waiting on.
+      ref.end_ns = item.end.Val() < 0 ? item.start.Val() : item.end.Val();
+      sections_.push_back(std::move(ref));
+    }
+  }
+  std::sort(sections_.begin(), sections_.end(),
+            [](const SectionRef& lhs, const SectionRef& rhs) {
+              if (lhs.start_ns != rhs.start_ns) {
+                return lhs.start_ns < rhs.start_ns;
+              }
+              return lhs.category < rhs.category;
+            });
+
   const auto& gpu_data = worker_->GetGpuData();
   for (size_t i = 0; i < gpu_data.size(); ++i) {
     const tracy::GpuCtxData* ctx = gpu_data[i];

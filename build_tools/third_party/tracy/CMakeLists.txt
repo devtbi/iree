@@ -258,6 +258,7 @@ if(IREE_BUILD_TESTS)
           "${CMAKE_CURRENT_SOURCE_DIR}/profile/test/capture_file_test.py"
           "$<TARGET_FILE:iree-run-module>"
           "$<TARGET_FILE:IREETracyProfile>"
+          "$<TARGET_FILE:iree-benchmark-module>"
       )
     endif()
   endif()

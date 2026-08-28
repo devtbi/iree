@@ -614,6 +614,83 @@ void iree_tracing_gpu_zone_notify(uint8_t context_id, uint16_t query_id,
   tracy::Profiler::QueueSerialFinish();
 }
 
+//===----------------------------------------------------------------------===//
+// Sections
+//===----------------------------------------------------------------------===//
+
+// Writes a section-enter item carrying |text| at |timestamp|.
+//
+// tracy's own Profiler::SectionEnter stamps the current time, which is wrong
+// for a span that is being reported after it finished. The item is built here
+// instead; the client delta-encodes the timestamp against the thread reference
+// when it drains the queue, and that delta is signed, so a time in the past is
+// as representable as one in the present.
+static iree_tracing_section_id_t iree_tracing_section_begin_at(
+    uint16_t category, int64_t timestamp, const char* text,
+    size_t text_length) {
+#if defined(TRACY_ON_DEMAND)
+  if (!tracy::GetProfiler().IsConnected()) return 0;
+#endif  // TRACY_ON_DEMAND
+  if (text_length > UINT16_MAX - 1) text_length = UINT16_MAX - 1;
+
+  // The client frees this after transferring it, from its own allocator.
+  char* text_copy = (char*)tracy::tracy_malloc(text_length + 1);
+  if (text_length) memcpy(text_copy, text, text_length);
+  text_copy[text_length] = 0;
+
+  const uint32_t section_id = tracy::GetProfiler().GetNextSectionId();
+  TracyQueuePrepareC(tracy::QueueType::SectionEnter);
+  tracy::MemWrite(&item->sectionEnterFat.time, timestamp);
+  tracy::MemWrite(&item->sectionEnterFat.id, section_id);
+  tracy::MemWrite(&item->sectionEnterFat.category, category);
+  tracy::MemWrite(&item->sectionEnterFat.text, (uint64_t)text_copy);
+  tracy::MemWrite(&item->sectionEnterFat.size, (uint16_t)text_length);
+  TracyQueueCommitC(sectionEnterFatThread);
+  return section_id;
+}
+
+static void iree_tracing_section_end_at(iree_tracing_section_id_t section_id,
+                                        int64_t timestamp) {
+  if (section_id == 0) return;
+#if defined(TRACY_ON_DEMAND)
+  if (!tracy::GetProfiler().IsConnected()) return;
+#endif  // TRACY_ON_DEMAND
+  TracyQueuePrepareC(tracy::QueueType::SectionLeave);
+  tracy::MemWrite(&item->sectionLeave.time, timestamp);
+  tracy::MemWrite(&item->sectionLeave.id, section_id);
+  TracyQueueCommitC(sectionLeaveThread);
+}
+
+iree_tracing_section_id_t iree_tracing_section_begin(uint16_t category,
+                                                     const char* text,
+                                                     size_t text_length) {
+  return iree_tracing_section_begin_at(category, tracy::Profiler::GetTime(),
+                                       text, text_length);
+}
+
+void iree_tracing_section_end(iree_tracing_section_id_t section_id) {
+  iree_tracing_section_end_at(section_id, tracy::Profiler::GetTime());
+}
+
+iree_tracing_section_id_t iree_tracing_section_begin_external(
+    uint16_t category, int64_t timestamp, const char* text,
+    size_t text_length) {
+  return iree_tracing_section_begin_at(category, timestamp, text, text_length);
+}
+
+void iree_tracing_section_end_external(iree_tracing_section_id_t section_id,
+                                       int64_t timestamp) {
+  iree_tracing_section_end_at(section_id, timestamp);
+}
+
+void iree_tracing_section_configure(uint16_t category, const char* name,
+                                    size_t name_length) {
+  // Deferred by the client under on-demand profiling so it survives a
+  // reconnect, which is why it does not check IsConnected here.
+  tracy::Profiler::SectionSetup(category, "%.*s", (int)name_length,
+                                name ? name : "");
+}
+
 #endif  // IREE_TRACING_FEATURE_INSTRUMENTATION_DEVICE
 
 #if IREE_TRACING_FEATURES & IREE_TRACING_FEATURE_ALLOCATION_TRACKING

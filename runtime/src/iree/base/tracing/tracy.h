@@ -182,6 +182,40 @@ void iree_tracing_mutex_after_lock(uint32_t lock_id);
 void iree_tracing_mutex_after_try_lock(uint32_t lock_id, bool was_acquired);
 void iree_tracing_mutex_after_unlock(uint32_t lock_id);
 
+//===----------------------------------------------------------------------===//
+// Sections
+//===----------------------------------------------------------------------===//
+// A section is a named span on a category track drawn above the timeline,
+// carrying arbitrary per-instance text. Zones cannot do this: a GPU zone has no
+// text field at all, and putting the text in an allocated source location
+// instead spends one of the 32767 the trace allows, which a per-event string
+// exhausts. Sections have no such budget and pair by an explicit id, so they
+// are also the only place a correlation id between events can be written down.
+//
+// Available in any tracing build: sections belong to neither the host nor the
+// device instrumentation family and are not switched off with either.
+
+typedef uint32_t iree_tracing_section_id_t;
+
+// Opens a section on |category| spanning from now, labeled with |text|.
+// Returns 0 if no section was recorded, which iree_tracing_section_end ignores.
+iree_tracing_section_id_t iree_tracing_section_begin(uint16_t category,
+                                                     const char* text,
+                                                     size_t text_length);
+void iree_tracing_section_end(iree_tracing_section_id_t section_id);
+
+// As above but placed at |timestamp| on the tracing clock, for spans that are
+// reported after they finished. Begin and end may be emitted in either order.
+iree_tracing_section_id_t iree_tracing_section_begin_external(
+    uint16_t category, int64_t timestamp, const char* text,
+    size_t text_length);
+void iree_tracing_section_end_external(iree_tracing_section_id_t section_id,
+                                       int64_t timestamp);
+
+// Names a category. Categories are otherwise shown by number.
+void iree_tracing_section_configure(uint16_t category, const char* name,
+                                    size_t name_length);
+
 #if IREE_TRACING_FEATURES & IREE_TRACING_FEATURE_INSTRUMENTATION_DEVICE
 
 int64_t iree_tracing_time(void);
@@ -328,6 +362,16 @@ void* iree_tracing_obscure_ptr(void* ptr);
   iree_tracing_plot_value_f64_impl(name_literal, value)
 
 #define IREE_TRACE_FRAME_MARK() ___tracy_emit_frame_mark(NULL)
+// Sections: named spans on a category track carrying per-instance text.
+// |section_id| is declared by the BEGIN macro and consumed by END.
+#define IREE_TRACE_SECTION_BEGIN(section_id, category, text, text_length) \
+  iree_tracing_section_id_t section_id =                                  \
+      iree_tracing_section_begin((category), (text), (text_length))
+#define IREE_TRACE_SECTION_END(section_id) \
+  iree_tracing_section_end(section_id)
+#define IREE_TRACE_SECTION_CONFIGURE(category, name, name_length) \
+  iree_tracing_section_configure((category), (name), (name_length))
+
 #define IREE_TRACE_FRAME_MARK_NAMED(name_literal) \
   ___tracy_emit_frame_mark(name_literal)
 #define IREE_TRACE_FRAME_MARK_BEGIN_NAMED(name_literal) \
