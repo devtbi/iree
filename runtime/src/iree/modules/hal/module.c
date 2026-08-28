@@ -1856,9 +1856,12 @@ static iree_status_t iree_hal_module_fence_await_begin(
   }
 
   // Fast-path for no semaphores (empty/immediate fences).
+  // The zone stays the caller's: it is only ever handed over by entering the
+  // wait frame below, and the caller ends whatever it still owns. Ending it
+  // here as well would be a second end for the same id, which tracy treats as
+  // a capture-ending failure.
   if (total_timepoint_capacity == 0) {
     *out_wait_status = iree_ok_status();
-    IREE_TRACE_ZONE_END(zone_id);
     return iree_ok_status();
   }
 

@@ -1404,7 +1404,6 @@ static iree_status_t iree_hal_amdgpu_logical_device_allocate_storage(
   logical_device->host_allocator = host_allocator;
   logical_device->failure_status = IREE_ATOMIC_VAR_INIT(0);
   iree_atomic_store(&logical_device->epoch, 0, iree_memory_order_relaxed);
-  logical_device->next_profile_session_id = 1;
   iree_hal_amdgpu_profile_metadata_initialize(
       host_allocator, &logical_device->profile_metadata);
   iree_hal_amdgpu_profile_event_streams_initialize(
@@ -2851,7 +2850,7 @@ static iree_status_t iree_hal_amdgpu_logical_device_profiling_begin(
   uint64_t session_id = 0;
   iree_hal_profile_chunk_metadata_t metadata = {0};
   if (iree_status_is_ok(status)) {
-    session_id = logical_device->next_profile_session_id++;
+    session_id = iree_hal_profile_allocate_session_id();
     metadata = iree_hal_amdgpu_logical_device_profile_session_metadata(
         logical_device, session_id);
     logical_device->profiling.next_clock_correlation_sample_id = 1;

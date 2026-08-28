@@ -174,7 +174,6 @@ struct iree_hal_vulkan_logical_device_t {
     VkTimeDomainEXT host_time_domain;
 
     // Next process-local profiling session id.
-    uint64_t next_session_id;
 
     // Next clock-correlation sample id for the active profiling session.
     uint64_t next_clock_correlation_sample_id;
@@ -1559,7 +1558,7 @@ static iree_status_t iree_hal_vulkan_logical_device_profiling_begin(
 
   iree_hal_local_profile_recorder_options_t recorder_options = {
       .name = device->identifier,
-      .session_id = ++device->profile.next_session_id,
+      .session_id = iree_hal_profile_allocate_session_id(),
       .device_record_count = 1,
       .device_records = &device_record,
       .queue_record_count = device->queues.lane_count,

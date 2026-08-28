@@ -18,6 +18,15 @@
 
 IREE_HAL_API_RETAIN_RELEASE(profile_sink);
 
+// Session ids start at 1 so that 0 stays available as "no session".
+static iree_atomic_int64_t iree_hal_profile_next_session_id =
+    IREE_ATOMIC_VAR_INIT(1);
+
+IREE_API_EXPORT uint64_t iree_hal_profile_allocate_session_id(void) {
+  return (uint64_t)iree_atomic_fetch_add(&iree_hal_profile_next_session_id, 1,
+                                         iree_memory_order_relaxed);
+}
+
 IREE_API_EXPORT iree_status_t iree_hal_profile_sink_begin_session(
     iree_hal_profile_sink_t* sink,
     const iree_hal_profile_chunk_metadata_t* metadata) {

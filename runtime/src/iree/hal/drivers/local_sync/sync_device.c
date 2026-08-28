@@ -61,7 +61,6 @@ typedef struct iree_hal_sync_device_t {
   iree_hal_local_profile_recorder_t* profile_recorder;
 
   // Next process-local profiling session identifier assigned by this device.
-  uint64_t next_profile_session_id;
 
   // Next profiling submission identifier within the active session.
   iree_atomic_int64_t next_profile_submission_id;
@@ -1674,7 +1673,7 @@ static iree_status_t iree_hal_sync_device_profiling_begin(
 
   iree_hal_local_profile_recorder_options_t recorder_options = {
       .name = device->identifier,
-      .session_id = ++device->next_profile_session_id,
+      .session_id = iree_hal_profile_allocate_session_id(),
       .device_record_count = 1,
       .device_records = &device_record,
       .queue_record_count = 1,

@@ -101,7 +101,6 @@ typedef struct iree_hal_amdgpu_logical_device_t {
   iree_atomic_int64_t epoch;
 
   // Next process-local profile session identifier allocated by this device.
-  uint64_t next_profile_session_id;
 
   // Durable profiling metadata registered by cold executable/command-buffer
   // construction paths.

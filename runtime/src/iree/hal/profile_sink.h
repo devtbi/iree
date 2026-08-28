@@ -92,6 +92,17 @@ iree_hal_profile_chunk_metadata_default(void) {
 }
 
 // Retains the given |sink| for the caller.
+// Allocates the next session identifier for this process.
+//
+// iree_hal_profile_chunk_metadata_t::session_id is documented as process-local,
+// but every producer used to number its own sessions from a counter on the
+// device, so each device's first session was 1. Two devices from the same
+// driver then agree on all three fields a consumer keys sessions by - producer
+// name, session id, and device ordinal, which is 0 for any device outside a
+// topology - and their records merge into one timeline. Producers take their
+// session ids from here so the field means what it says.
+IREE_API_EXPORT uint64_t iree_hal_profile_allocate_session_id(void);
+
 IREE_API_EXPORT void iree_hal_profile_sink_retain(
     iree_hal_profile_sink_t* sink);
 
