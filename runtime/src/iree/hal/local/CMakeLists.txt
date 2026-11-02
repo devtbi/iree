@@ -237,4 +237,16 @@ iree_cc_library(
   PUBLIC
 )
 
+iree_cc_test(
+  NAME
+    transient_buffer_test
+  SRCS
+    "transient_buffer_test.cc"
+  DEPS
+    ::transient_buffer
+    iree::hal
+    iree::testing::gtest
+    iree::testing::gtest_main
+)
+
 ### BAZEL_TO_CMAKE_PRESERVES_ALL_CONTENT_BELOW_THIS_LINE ###

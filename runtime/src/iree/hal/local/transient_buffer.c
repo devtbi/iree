@@ -65,12 +65,6 @@ static iree_status_t iree_hal_local_transient_buffer_retain_host_backing(
     iree_hal_buffer_t** out_backing_buffer) {
   *out_backing_buffer = NULL;
   iree_slim_mutex_lock(&buffer->mutex);
-  if (IREE_UNLIKELY(buffer->dealloca_queued != 0)) {
-    iree_slim_mutex_unlock(&buffer->mutex);
-    return iree_make_status(
-        IREE_STATUS_FAILED_PRECONDITION,
-        "transient buffer has been queued for deallocation");
-  }
   iree_hal_buffer_t* backing_buffer = buffer->committed_backing;
   if (IREE_UNLIKELY(!backing_buffer)) {
     iree_slim_mutex_unlock(&buffer->mutex);
