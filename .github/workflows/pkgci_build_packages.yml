@@ -85,7 +85,7 @@ jobs:
           wait
       - name: Build
         run: |
-          export cache_dir="${{ env.CACHE_DIR }}"
+          export cache_dir="${CACHE_DIR}"
           export output_dir="${{ github.workspace }}/wheelhouse"
           export toolchain_suffix=release
           export manylinux_docker_image="$MANYLINUX_DOCKER_IMAGE"
@@ -149,7 +149,7 @@ jobs:
 #         wait
 #     - name: Build
 #       run: |
-#         export cache_dir="${{ env.CACHE_DIR }}"
+#         export cache_dir="${CACHE_DIR}"
 #         export output_dir="${{ github.workspace }}/wheelhouse"
 #         export toolchain_suffix=release_asserts
 #         export manylinux_docker_image="$MANYLINUX_DOCKER_IMAGE"
