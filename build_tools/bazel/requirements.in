@@ -1,0 +1,6 @@
+# The packages of the Bazel pip hub that no package in this repository requires,
+# as version ranges. requirements.txt pins them, the dependencies of
+# iree-base-core (core/python/pyproject.toml) and what all of them need to exact
+# versions with hashes. To update it after a change here or there, run the
+# command at its top in this directory.
+numpy>=2.0.0

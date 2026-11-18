@@ -28,6 +28,15 @@ endif()
 
 iree_local_py_test(
   NAME
+    config_test
+  SRC
+    "test/config_test.py"
+  PACKAGE_DIRS
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+iree_local_py_test(
+  NAME
     package_test
   SRC
     "test/package_test.py"
