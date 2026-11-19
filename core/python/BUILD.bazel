@@ -22,6 +22,7 @@ PY_SRCS = enforce_glob(
         "iree/core/_paths.py",
         "iree/core/config.py",
         "iree/core/log_config.py",
+        "iree/core/plugins.py",
         "iree/core/result.py",
     ],
     include = ["iree/core/**/*.py"],
@@ -32,6 +33,7 @@ PY_TESTS = enforce_glob(
         "test/config_test.py",
         "test/log_config_test.py",
         "test/package_test.py",
+        "test/plugins_test.py",
         "test/result_test.py",
     ],
     include = ["test/**/*.py"],
@@ -46,6 +48,7 @@ py_library(
     deps = [
         "@pip//dacite",
         "@pip//loguru",
+        "@pip//pluggy",
     ],
 )
 
@@ -64,6 +67,15 @@ py_test(
     srcs = ["test/log_config_test.py"],
     legacy_create_init = False,
     main = "test/log_config_test.py",
+    deps = [":core"],
+)
+
+py_test(
+    name = "plugins_test",
+    size = "small",
+    srcs = ["test/plugins_test.py"],
+    legacy_create_init = False,
+    main = "test/plugins_test.py",
     deps = [":core"],
 )
 
@@ -123,6 +135,15 @@ iree_local_py_test(
     log_config_test
   SRC
     "test/log_config_test.py"
+  PACKAGE_DIRS
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+iree_local_py_test(
+  NAME
+    plugins_test
+  SRC
+    "test/plugins_test.py"
   PACKAGE_DIRS
     "${CMAKE_CURRENT_SOURCE_DIR}"
 )

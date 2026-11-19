@@ -12,6 +12,10 @@ loguru==0.8.0 \
     --hash=sha256:e0fba09d6f76ba2d2f4bd1757122942f5a670c702e988b5efaeab99dacba0069 \
     --hash=sha256:fb3e4623288e37700a0577f6e0ce776cc1860b5d95c657d67f07a2476b304867
     # via iree-base-core (pyproject.toml)
+pluggy==1.7.0 \
+    --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec \
+    --hash=sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8
+    # via iree-base-core (pyproject.toml)
 win32-setctime==1.2.1 ; sys_platform == 'win32' \
     --hash=sha256:077b35471bf1ff1d71e165c919ddc0cecf51b8e1802f5d820d33a96e2f6717dd \
     --hash=sha256:a9edc685b35414bec69392c866ed82456ad125ac4a6a4b703ec1d8b462d4f477

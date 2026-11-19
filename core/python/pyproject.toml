@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "dacite>=1.9.2",
     "loguru>=0.7.3",
+    "pluggy>=1.5.0",
 ]
 # Computed by setup.py.
 dynamic = ["version"]
