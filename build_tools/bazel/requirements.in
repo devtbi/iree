@@ -4,3 +4,4 @@
 # versions with hashes. To update it after a change here or there, run the
 # command at its top in this directory.
 numpy>=2.0.0
+pytest>=8.0.0
